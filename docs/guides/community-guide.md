@@ -45,7 +45,7 @@ Use GitHub pull requests to contribute code changes, including:
 
 ```bash
 # Clone the repository
-git clone https://github.com/nokia/nsp-ansible-integration.git
+git clone https://github.com/nokia-steward/nsp-ansible-integration.git
 cd nsp-ansible-integration
 
 # Create and activate virtual environment
@@ -172,7 +172,7 @@ We appreciate every contribution! Contributors are recognized in:
 
 ---
 
-**Questions?** Open a [GitHub Issue](https://github.com/nokia/nsp-ansible-integration/issues) or join the discussion.
+**Questions?** Open a [GitHub Issue](https://github.com/nokia-steward/nsp-ansible-integration/issues) or join the discussion.
 
 **Ready to contribute?** Pick an issue labeled `good first issue` on GitHub or suggest improvements!
 

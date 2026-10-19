@@ -4,7 +4,7 @@ site_url: https://network.developer.nokia.com
 edit_uri: edit/main/docs/
 site_author: Sven Wisotzky
 repo_name: nokia/nsp-ansible-integration
-repo_url: https://github.com/nokia/nsp-ansible-integration
+repo_url: https://github.com/nokia-steward/nsp-ansible-integration
 copyright: Copyright &copy; 2026 Nokia
 theme:
   name: material
@@ -94,4 +94,4 @@ extra:
   version: 1.0.0
   social:
   - icon: fontawesome/brands/github
-    link: https://github.com/nokia/nsp-ansible-integration
+    link: https://github.com/nokia-steward/nsp-ansible-integration

@@ -43,7 +43,7 @@ Here are some instructions to kickstart your automation journey:
 
 ## Support
 
-- **Issues**: [GitHub Issues](https://github.com/nokia/nsp-ansible-integration/issues)
+- **Issues**: [GitHub Issues](https://github.com/nokia-steward/nsp-ansible-integration/issues)
 - **Install**: [Ansible Galaxy](https://galaxy.ansible.com/nokia/nsp)
 
 ---

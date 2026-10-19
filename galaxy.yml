@@ -16,10 +16,10 @@ tags:
 dependencies:
   ansible.netcommon: ">=5.2.0"
   ansible.utils: ">=3.0.0"
-repository: https://github.com/nokia/nsp-ansible-integration
-documentation: https://nokia.github.io/nsp-ansible-integration
-homepage: https://nokia.github.io/nsp-ansible-integration
-issues: https://github.com/nokia/nsp-ansible-integration/issues
+repository: https://github.com/nokia-steward/nsp-ansible-integration
+documentation: https://nokia-steward.github.io/nsp-ansible-integration
+homepage: https://nokia-steward.github.io/nsp-ansible-integration
+issues: https://github.com/nokia-steward/nsp-ansible-integration/issues
 build_ignore:
   - .github/
   - tools/
