@@ -1,8 +1,7 @@
 # Nokia NSP Ansible Collection
 
-[![Build Status](https://github.com/nokia/nsp-ansible-integration/actions/workflows/ci.yml/badge.svg)](https://github.com/nokia/nsp-ansible-integration/actions)
-[![Documentation](https://img.shields.io/badge/docs-mkdocs-blue)](
- https://nokia-steward.github.io/nsp-ansible-integration)
+[![Build Status](https://github.com/nokia-steward/nsp-ansible-integration/actions/workflows/ci.yml/badge.svg)](https://github.com/nokia-steward/nsp-ansible-integration/actions)
+[![Documentation](https://img.shields.io/badge/docs-mkdocs-blue)](https://nokia-steward.github.io/nsp-ansible-integration)
 [![License](https://img.shields.io/badge/license-BSD%203--Clause-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Ansible](https://img.shields.io/badge/ansible-2.14%2B-blue)](https://www.ansible.com/)
@@ -67,8 +66,8 @@ For complete documentation, visit the [Documentation Site](https://nokia-steward
 ## Support
 
 - 📚 [Documentation](https://nokia-steward.github.io/nsp-ansible-integration/)
-- 🐛 [Report Issues](https://github.com/nokia/nsp-ansible-integration/issues)
-- 💬 [Discussions](https://github.com/nokia/nsp-ansible-integration/discussions)
+- 🐛 [Report Issues](https://github.com/nokia-steward/nsp-ansible-integration/issues)
+- 💬 [Discussions](https://github.com/nokia-steward/nsp-ansible-integration/discussions)
 - 📖 [Changelog](CHANGELOG.md)
 
 ## License
