@@ -12,7 +12,7 @@ Your community is your best resource:
 - **GitHub Discussions** - Share ideas, solutions, and learn from others
 - **Documentation** - Check the [guides](guides/index.md) for comprehensive instructions
 
-Visit the [project on GitHub](https://github.com/nokia/nsp-ansible-integration) to get started!
+Visit the [project on GitHub](https://github.com/nokia-steward/nsp-ansible-integration) to get started!
 
 ## Before Production
 
@@ -29,9 +29,9 @@ Thorough testing minimizes production risks and ensures reliability.
 
 Found a bug? Have a suggestion? The community can help:
 
-- **Bugs**: [Open a GitHub Issue](https://github.com/nokia/nsp-ansible-integration/issues) with reproduction steps, expected vs. actual behavior, versions, and logs
-- **Features**: [Suggest on GitHub Discussions](https://github.com/nokia/nsp-ansible-integration/discussions) or open an issue labeled `enhancement`
-- **Security**: Don't open a public issue! Use GitHub's [security reporting feature](https://github.com/nokia/nsp-ansible-integration/security/advisories) or contact maintainers privately
+- **Bugs**: [Open a GitHub Issue](https://github.com/nokia-steward/nsp-ansible-integration/issues) with reproduction steps, expected vs. actual behavior, versions, and logs
+- **Features**: [Suggest on GitHub Discussions](https://github.com/nokia-steward/nsp-ansible-integration/discussions) or open an issue labeled `enhancement`
+- **Security**: Don't open a public issue! Use GitHub's [security reporting feature](https://github.com/nokia-steward/nsp-ansible-integration/security/advisories) or contact maintainers privately
 
 ## Professional Services
 
@@ -45,6 +45,6 @@ This ensures your automation aligns with operational best practices and your bus
 
 ---
 
-**Questions?** Check the [guides](guides/index.md) or open an [issue on GitHub](https://github.com/nokia/nsp-ansible-integration/issues).
+**Questions?** Check the [guides](guides/index.md) or open an [issue on GitHub](https://github.com/nokia-steward/nsp-ansible-integration/issues).
 
 **Ready to contribute?** See the [Community Guide](guides/community-guide.md)!

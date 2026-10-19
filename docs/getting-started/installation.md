@@ -52,7 +52,7 @@ ansible-galaxy collection install nokia.nsp --upgrade --force
 /// tab | GitHub Release
 ```bash
 # Download the latest release artifact
-wget https://github.com/nokia/nsp-ansible-integration/releases/latest/download/nokia-nsp-latest.tar.gz
+wget https://github.com/nokia-steward/nsp-ansible-integration/releases/latest/download/nokia-nsp-latest.tar.gz
 
 # Install locally
 ansible-galaxy collection install nokia-nsp-latest.tar.gz --force
@@ -60,7 +60,7 @@ ansible-galaxy collection install nokia-nsp-latest.tar.gz --force
 ///
 /// tab | Build from Source
 ```bash
-git clone https://github.com/nokia/nsp-ansible-integration.git
+git clone https://github.com/nokia-steward/nsp-ansible-integration.git
 cd nsp-ansible-integration
 make install-dev
 make install

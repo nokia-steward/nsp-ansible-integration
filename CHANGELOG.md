@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 ### Changed
 
 - Released version 1.0.0 of the Nokia NSP Ansible Collection (`nokia.nsp`)
-- Renamed the repository to [nokia/nsp-ansible-integration](https://github.com/nokia/nsp-ansible-integration)
+- Renamed the repository to [nokia/nsp-ansible-integration](https://github.com/nokia-steward/nsp-ansible-integration)
 
 ## [0.1.0] - 2026-05-06
 
@@ -51,7 +51,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 **Current Version:** 1.0.0  
 **Release Date:** 2026-05-21  
-**Repository:** [github.com/nokia/nsp-ansible-integration](https://github.com/nokia/nsp-ansible-integration)
+**Repository:** [github.com/nokia-steward/nsp-ansible-integration](https://github.com/nokia-steward/nsp-ansible-integration)
 
-[1.0.0]: https://github.com/nokia/nsp-ansible-integration/releases/tag/1.0.0
-[0.1.0]: https://github.com/nokia/nsp-ansible-integration/releases/tag/0.1.0
+[1.0.0]: https://github.com/nokia-steward/nsp-ansible-integration/releases/tag/1.0.0
+[0.1.0]: https://github.com/nokia-steward/nsp-ansible-integration/releases/tag/0.1.0
