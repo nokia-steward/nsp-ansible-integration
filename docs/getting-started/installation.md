@@ -23,8 +23,8 @@ python3 -m venv ansible-env
 source ansible-env/bin/activate
 ```
 ///
-///
-tab | Windows
+
+/// tab | Windows
 ```
 ansible-env\Scripts\activate
 ```
