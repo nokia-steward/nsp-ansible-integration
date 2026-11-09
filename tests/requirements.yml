@@ -1,0 +1,5 @@
+---
+# Collections used by the test playbooks, beyond the galaxy.yml dependencies
+# ansible-galaxy collection install -r tests/requirements.yml
+collections:
+  - name: community.general

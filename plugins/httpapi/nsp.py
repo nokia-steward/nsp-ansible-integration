@@ -56,7 +56,7 @@ options:
     vars:
       - name: ansible_httpapi_nsp_host
 requirements:
-  - Ansible >= 2.10
+  - ansible-core >= 2.20
 notes:
   - OAuth2 client credentials are configured via C(ansible_user) and C(ansible_password).
   - All modules in this collection automatically use this plugin when C(ansible_network_os=nokia.nsp.nsp).

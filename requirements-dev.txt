@@ -1,5 +1,5 @@
 # Development and CI/CD Dependencies
-# Requires: Python 3.11+
+# Controller: Python 3.12+, ansible-core 2.20+
 # Install with: pip install -r requirements-dev.txt
 
 # Include base production dependencies

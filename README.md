@@ -4,8 +4,8 @@
 [![Documentation](https://img.shields.io/badge/docs-mkdocs-blue)](
  https://nokia-steward.github.io/nsp-ansible-integration)
 [![License](https://img.shields.io/badge/license-BSD%203--Clause-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
-[![Ansible](https://img.shields.io/badge/ansible-2.14%2B-blue)](https://www.ansible.com/)
+[![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+[![Ansible](https://img.shields.io/badge/ansible--core-2.20%2B-blue)](https://docs.ansible.com/)
 
 Ansible HTTP API plugin for automation use-cases involving Nokia NSP. Includes NSP plugin for authentication handling and modules for interacting with NSP REST and RESTCONF APIs.
 
@@ -13,8 +13,8 @@ Ansible HTTP API plugin for automation use-cases involving Nokia NSP. Includes N
 
 ## Requirements
 
-- **Python**: 3.11 or newer
-- **Ansible**: 2.14 or newer
+- **Ansible Core**: 2.20 or newer (2.22 recommended)
+- **Python**: 3.12 or newer on the controller (3.13 recommended)
 - **NSP**: 23.11 or newer
 - **Network**: HTTPS/SSL connectivity to NSP API endpoints
 - **Python libraries**: [requests](https://pypi.org/project/requests/), [urllib3](https://pypi.org/project/urllib3/), [six](https://pypi.org/project/six/)
@@ -24,6 +24,7 @@ Ansible HTTP API plugin for automation use-cases involving Nokia NSP. Includes N
 ## Installation
 
 ```bash
+pip install 'ansible-core>=2.20' 'requests>=2.28.0' 'urllib3>=1.26.0' 'six>=1.16.0'
 ansible-galaxy collection install nokia.nsp --force-with-deps
 ```
 
@@ -77,4 +78,4 @@ BSD 3-Clause License (see [LICENSE](LICENSE))
 
 ---
 
-**Version**: 1.0.0 | **License**: BSD 3-Clause
+**Version**: 1.0.1 | **License**: BSD 3-Clause

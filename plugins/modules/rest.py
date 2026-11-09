@@ -83,7 +83,7 @@ options:
     type: int
     default: 30
 requirements:
-  - Ansible >= 2.10
+  - ansible-core >= 2.20
   - Connection to NSP controller with I(ansible_network_os=nokia.nsp.nsp).
 notes:
   - Requires M(ansible.netcommon.httpapi) connection using Network OS M(nokia.nsp.nsp).

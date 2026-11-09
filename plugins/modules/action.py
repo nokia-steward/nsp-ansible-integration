@@ -65,7 +65,7 @@ notes:
   - For global operations use M(nokia.nsp.rpc) instead.
   - Resource path must URL-encode special characters properly.
 requirements:
-  - Ansible >= 2.10
+  - ansible-core >= 2.20
   - Connection to NSP controller with I(ansible_network_os=nokia.nsp.nsp).
 '''
 

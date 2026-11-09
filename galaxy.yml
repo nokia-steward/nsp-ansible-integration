@@ -1,7 +1,7 @@
 ---
 namespace: nokia
 name: nsp
-version: 1.0.0
+version: 1.0.1
 readme: README.md
 authors:
   - Sven Wisotzky <sven.wisotzky@nokia.com>
@@ -21,8 +21,16 @@ documentation: https://nokia-steward.github.io/nsp-ansible-integration
 homepage: https://nokia-steward.github.io/nsp-ansible-integration
 issues: https://github.com/nokia-steward/nsp-ansible-integration/issues
 build_ignore:
-  - .github/
-  - tools/
-  - tests/
+  - .github
+  - .gitignore
+  - .flake8
+  - .pylintrc
+  - .venv
+  - site
+  - tools
+  - tests
+  - requirements-dev.txt
+  - bandit-report.json
+  - '*.tar.gz'
   - CHANGELOG.md
   - CONTRIBUTING.md

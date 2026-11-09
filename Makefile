@@ -1,7 +1,7 @@
 .PHONY: help setup install-dev check-venv lint flake8 pylint format yamllint security bandit audit validate validate-syntax validate-ansible test docs docs-serve build publish clean clean-all ci test-all
 
 # Virtual environment variables
-# Requires Python 3.11+
+# Requires Python 3.12+ (ansible-core 2.20+)
 PYTHON := python3
 VENV_DIR := ansible-env
 VENV_ACTIVE := $(shell echo $${VIRTUAL_ENV})
@@ -82,13 +82,13 @@ check-venv:
 
 setup:
 	@echo "Checking Python version requirement..."
-	@if ! $(PYTHON) --version 2>&1 | grep -qE '3\.(11|12|13|14)'; then \
-		echo "⚠️ ERROR: Python 3.11+ required"; \
+	@if ! $(PYTHON) --version 2>&1 | grep -qE '3\.(12|13|14)'; then \
+		echo "⚠️ ERROR: Python 3.12+ required"; \
 		echo "   Found: $$($(PYTHON) --version)"; \
-		echo "   Install Python 3.11 or higher"; \
+		echo "   Install Python 3.12 or higher"; \
 		exit 1; \
 	fi
-	@echo "✓ Python 3.11+ detected"
+	@echo "✓ Python 3.12+ detected"
 	@echo ""
 	@if [ "$(IN_VENV)" = "yes" ]; then \
 		echo "✓ Already in virtual environment: $$VIRTUAL_ENV"; \
@@ -192,6 +192,7 @@ validate-ansible:
 	@echo "Running Ansible syntax check..."
 	@echo "Installing collection from source (pulls galaxy.yml dependencies)..."
 	ansible-galaxy collection install . --force
+	ansible-galaxy collection install -r tests/requirements.yml
 	@if [ -f tests/inventory.yml ]; then \
 		ansible-playbook --syntax-check -i tests/inventory.yml tests/playbooks/*.yml; \
 	else \
@@ -206,6 +207,7 @@ validate-ansible:
 
 test:
 	@echo "Running all playbook tests (continues on failure; report under tests/reports/)..."
+	ansible-galaxy collection install -r tests/requirements.yml
 	@bash tests/run_playbook_tests.sh
 	@echo "✓ All playbook tests passed"
 
