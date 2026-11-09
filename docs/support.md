@@ -14,6 +14,22 @@ Your community is your best resource:
 
 Visit the [project on GitHub](https://github.com/nokia-steward/nsp-ansible-integration) to get started!
 
+## Supported Ansible and Python versions
+
+The Nokia Ansible collections `nokia.openconfig`, `nokia.nsp` and `nokia.sros` share one support policy for the Ansible controller. The minimum is the oldest `ansible-core` release that still receives security fixes, so that a supported installation also receives fixes for known vulnerabilities (CVEs).
+
+| | ansible-core | Python on the controller |
+| --- | --- | --- |
+| Minimum | 2.20 | 3.12 |
+| Recommended | 2.22 | 3.13 |
+| Tested in CI | 2.20, 2.21, 2.22 | 3.12, 3.13, 3.14 |
+
+`ansible-core` 2.20 and newer run on Python 3.12 to 3.14, see the [ansible-core support matrix](https://docs.ansible.com/projects/ansible/latest/reference_appendices/release_and_maintenance.html#ansible-core-support-matrix). The modules of this collection run on the controller, so the NSP server needs no Python.
+
+Older releases, `ansible-core` 2.19 and earlier, no longer receive security fixes. The collection may still work with them, but they are not tested, Ansible prints a warning that the collection does not support the running version, and issues reported against them are handled on a best-effort basis. Upgrade to a supported release instead.
+
+The minimum follows the `ansible-core` release cycle: it is raised when an `ansible-core` release reaches end of life, in May and November.
+
 ## Before Production
 
 Before deploying playbooks in production, conduct thorough testing. Production systems encounter challenges not seen in lab setups. Test these critical areas:

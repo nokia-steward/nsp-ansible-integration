@@ -91,7 +91,7 @@ markdown_extensions:
 - pymdownx.tasklist:
     custom_checkbox: true
 extra:
-  version: 1.0.0
+  version: 1.0.1
   social:
   - icon: fontawesome/brands/github
     link: https://github.com/nokia-steward/nsp-ansible-integration

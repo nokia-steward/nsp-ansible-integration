@@ -8,22 +8,35 @@ on:
 
 jobs:
   validate:
-    name: Validate Collection
+    name: Validate Collection (ansible-core ${{ matrix.ansible }}, Python ${{ matrix.python }})
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ['3.11', '3.12']
+        include:
+          # Oldest supported core with the oldest controller Python
+          - ansible: '2.20'
+            python: '3.12'
+          # Previous stable with the newest controller Python
+          - ansible: '2.21'
+            python: '3.14'
+          # Latest stable with the recommended controller Python
+          - ansible: '2.22'
+            python: '3.13'
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+      - name: Set up Python ${{ matrix.python }}
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ matrix.python }}
 
       - name: Install dependencies
         run: make install-dev
+
+      - name: Install ansible-core ${{ matrix.ansible }}
+        run: pip install "ansible-core==${{ matrix.ansible }}.*"
 
       - name: Validate syntax and code quality
         run: make validate lint
@@ -37,9 +50,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.13'
 
       - name: Install dependencies
         run: make install-dev

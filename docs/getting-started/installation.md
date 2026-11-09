@@ -1,9 +1,9 @@
 # Installation
 
 !!! tip "Prerequisites"
-    **Python:** `3.11+`, **Ansible:** `2.14+`, **NSP:** `23.11+`
+    **Python:** `3.12+` (3.13 recommended), **Ansible Core:** `2.20+` (2.22 recommended), **NSP:** `23.11+`
 
-    Python 3.12 or higher is recommended for optimal performance and latest features!
+    Older Ansible and Python releases no longer receive security fixes, see [Supported Ansible and Python versions](../support.md#supported-ansible-and-python-versions).
     HTTP/SSL connectivity to NSP API endpoints must be available!
     Consider up to 100MB of disk space for dependencies and collection files!
 
@@ -35,7 +35,7 @@ Upgrade pip and install the core Ansible framework along with required dependenc
 
 ```bash
 pip install --upgrade pip setuptools wheel
-pip install 'ansible>=2.14.0' 'requests>=2.28.0' 'urllib3>=1.26.0' 'six>=1.16.0'
+pip install 'ansible-core>=2.20' 'requests>=2.28.0' 'urllib3>=1.26.0' 'six>=1.16.0'
 ```
 
 ## Step 4: Install Nokia NSP Collection
@@ -67,6 +67,9 @@ make install
 ```
 ///
 
+!!! note "Execution environments"
+    For [AWX, Ansible Automation Platform](https://docs.ansible.com/automation-controller/latest/html/userguide/execution_environments.html) or [ansible-navigator](https://ansible.readthedocs.io/projects/navigator/), build an execution environment with [ansible-builder](https://ansible.readthedocs.io/projects/builder/). The collection declares its Python dependencies in `meta/execution-environment.yml`, so listing `nokia.nsp` under `dependencies.galaxy.collections` of your `execution-environment.yml` is sufficient.
+
 ## Step 5: Verify Installation
 
 Confirm the collection is installed and accessible:
@@ -76,7 +79,7 @@ Confirm the collection is installed and accessible:
 ansible-galaxy collection list | grep nokia.nsp
 
 # Expected output:
-# nokia.nsp  1.0.0
+# nokia.nsp  1.0.1
 
 # Verify module documentation is available
 ansible-doc -t module nokia.nsp.rpc

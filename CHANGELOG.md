@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1]
+
+### Changed
+
+- Pinned to officially supported Ansible/Python releases, which still receive security (CVE) fixes: `ansible-core` 2.20+ (was 2.14+) and Python 3.12+ (was 3.11+), recommended 2.22 with Python 3.13. Older releases are best-effort only, see [Support](https://nokia-steward.github.io/nsp-ansible-integration/support/#supported-ansible-and-python-versions).
+
+### Added
+
+- `meta/execution-environment.yml` for `ansible-builder`
+
+### Fixed
+
+- Development files (`.github/`, `tests/`, `tools/`) are no longer shipped in the collection artifact
 
 ## [1.0.0] - 2026-05-21
 
@@ -49,9 +62,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## Release Information
 
-**Current Version:** 1.0.0  
-**Release Date:** 2026-05-21  
+**Current Version:** 1.0.1  
 **Repository:** [github.com/nokia-steward/nsp-ansible-integration](https://github.com/nokia-steward/nsp-ansible-integration)
 
+[1.0.1]: https://github.com/nokia-steward/nsp-ansible-integration/releases/tag/1.0.1
 [1.0.0]: https://github.com/nokia-steward/nsp-ansible-integration/releases/tag/1.0.0
 [0.1.0]: https://github.com/nokia-steward/nsp-ansible-integration/releases/tag/0.1.0
