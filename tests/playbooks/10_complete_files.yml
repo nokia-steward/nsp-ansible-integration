@@ -18,12 +18,12 @@
 
     - name: create zip file
       delegate_to: localhost
-      archive:
+      community.general.archive:
         path:
           - /tmp/test_upload_A.txt
           - /tmp/test_upload_B.txt
         dest: /tmp/test_archive.zip
-        format: zip        
+        format: zip
 
     - name: upload file
       nokia.nsp.upload:

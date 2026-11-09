@@ -192,6 +192,7 @@ validate-ansible:
 	@echo "Running Ansible syntax check..."
 	@echo "Installing collection from source (pulls galaxy.yml dependencies)..."
 	ansible-galaxy collection install . --force
+	ansible-galaxy collection install -r tests/requirements.yml
 	@if [ -f tests/inventory.yml ]; then \
 		ansible-playbook --syntax-check -i tests/inventory.yml tests/playbooks/*.yml; \
 	else \
@@ -206,6 +207,7 @@ validate-ansible:
 
 test:
 	@echo "Running all playbook tests (continues on failure; report under tests/reports/)..."
+	ansible-galaxy collection install -r tests/requirements.yml
 	@bash tests/run_playbook_tests.sh
 	@echo "✓ All playbook tests passed"
 
