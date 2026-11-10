@@ -1,7 +1,7 @@
 ---
 namespace: nokia
 name: nsp
-version: 1.0.2
+version: 1.0.3
 readme: README.md
 authors:
   - Sven Wisotzky <sven.wisotzky@nokia.com>

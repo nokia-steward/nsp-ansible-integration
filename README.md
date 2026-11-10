@@ -1,8 +1,8 @@
 # Nokia NSP Ansible Collection
 
 [![Build Status](https://github.com/nokia-steward/nsp-ansible-integration/actions/workflows/ci.yml/badge.svg)](https://github.com/nokia-steward/nsp-ansible-integration/actions)
-[![Documentation](https://img.shields.io/badge/docs-mkdocs-blue)](
- https://nokia-steward.github.io/nsp-ansible-integration)
+[![Ansible Galaxy](https://img.shields.io/ansible/collection/v/nokia/nsp?logo=ansible&logoColor=white)](https://galaxy.ansible.com/ui/repo/published/nokia/nsp)
+[![Documentation](https://img.shields.io/badge/docs-mkdocs-blue)](https://nokia-steward.github.io/nsp-ansible-integration)
 [![License](https://img.shields.io/badge/license-BSD%203--Clause-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 [![Ansible](https://img.shields.io/badge/ansible--core-2.20%2B-blue)](https://docs.ansible.com/)
@@ -78,4 +78,4 @@ BSD 3-Clause License (see [LICENSE](LICENSE))
 
 ---
 
-**Version**: 1.0.2 | **License**: BSD 3-Clause
+**Version**: 1.0.3 | **License**: BSD 3-Clause
