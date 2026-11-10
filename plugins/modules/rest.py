@@ -15,8 +15,9 @@ import os
 import tempfile
 from datetime import datetime, timezone
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.connection import Connection
+from ansible.module_utils.connection import ConnectionError as AnsibleConnectionError
 from ansible.module_utils.common.text.converters import to_native
+from ansible_collections.nokia.nsp.plugins.module_utils.nsp import get_connection  # pylint: disable=import-error
 
 # Validate Python version and required packages (optional fallback)
 try:
@@ -206,54 +207,84 @@ def _default_content_type(body):
 
 
 def write_file(module, dest, content):
-    """Write text content to destination file.
+    """Write text content to destination file atomically.
 
     Args:
         module: AnsibleModule instance.
         dest: Destination file path.
-        content: Content to write (str or convertible to str).
-
-    Returns:
-        True if successful.
+        content: Content to write (str).
 
     Raises:
         Calls module.fail_json on error.
     """
     try:
-        # Create temp file in module tmpdir
         fd, tmpfile = tempfile.mkstemp(dir=module.tmpdir)
         try:
-            if isinstance(content, str):
-                os.write(fd, content.encode("utf-8"))
-            else:
-                os.write(fd, str(content).encode("utf-8"))
+            os.write(fd, content.encode("utf-8"))
         finally:
             os.close(fd)
+    except OSError as e:
+        module.fail_json(msg=f"Failed to write file {dest}: {to_native(e)}")
 
-        # Atomic move
-        module.atomic_move(tmpfile, dest)
-        return True
-    except Exception as e:
-        module.fail_json(
-            msg=f"Failed to write file {dest}: {to_native(e)}"
-        )
+    module.atomic_move(tmpfile, dest)
+
+
+def _request_headers(headers, body):
+    """Return headers with default Accept and Content-Type unless the user set them."""
+    headers = dict(headers or {})
+    if _header_key(headers, "Accept") is None:
+        headers["Accept"] = "application/json"
+    if body is not None and _header_key(headers, "Content-Type") is None:
+        content_type = _default_content_type(body)
+        if content_type:
+            headers["Content-Type"] = content_type
+    return headers
+
+
+def _parse_content(response_content):
+    """Return (content, json) for a response body: parsed JSON passes through, text is parsed if possible."""
+    if response_content is None:
+        return None, None
+    if isinstance(response_content, (dict, list)):
+        return response_content, response_content
+    content = response_content if isinstance(response_content, str) else str(response_content)
+    try:
+        return content, json.loads(content)
+    except ValueError:
+        return content, None
+
+
+def _build_result(response_content, http_status, elapsed):
+    """Return (content, result) for a response: content as received, result with status, content and json."""
+    content, response_json = _parse_content(response_content)
+    result = {"status": http_status, "elapsed": elapsed, "headers": {}}
+    if content is not None:
+        result["content"] = content if isinstance(content, str) else json.dumps(content)
+    if response_json is not None:
+        result["json"] = response_json
+    return content, result
+
+
+def _elapsed(start_time):
+    """Return whole seconds since start_time."""
+    return int((datetime.now(timezone.utc) - start_time).total_seconds())
 
 
 def main():
     """Main module execution."""
     module = AnsibleModule(
-        argument_spec=dict(
-            path=dict(type='str', required=True),
-            method=dict(
-                type='str',
-                choices=['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-                default='GET'
-            ),
-            body=dict(type='raw', required=False, default=None),
-            dest=dict(type='path', required=False),
-            headers=dict(type='dict', default={}),
-            timeout=dict(type='int', default=30),
-        ),
+        argument_spec={
+            "path": {"type": "str", "required": True},
+            "method": {
+                "type": "str",
+                "choices": ["GET", "POST", "PUT", "DELETE", "PATCH"],
+                "default": "GET"
+            },
+            "body": {"type": "raw", "required": False, "default": None},
+            "dest": {"type": "path", "required": False},
+            "headers": {"type": "dict", "default": {}},
+            "timeout": {"type": "int", "default": 30},
+        },
         supports_check_mode=False,
     )
 
@@ -261,125 +292,47 @@ def main():
     method = module.params["method"]
     body = module.params["body"]
     dest = module.params["dest"]
-    headers = module.params["headers"] or {}
-
-    # Prepare request body (user sets Content-Type via headers)
-    request_data = None
-    if body is not None:
-        try:
-            request_data = serialize_body(body)
-        except ValueError as e:
-            module.fail_json(msg=str(e))
-
-    # Default Accept and Content-Type only when not provided in headers
-    if _header_key(headers, "Accept") is None:
-        headers["Accept"] = "application/json"
-    if body is not None and _header_key(headers, "Content-Type") is None:
-        content_type = _default_content_type(body)
-        if content_type:
-            headers["Content-Type"] = content_type
-
-    # Execute request
-    connection = Connection(module._socket_path)
-    start_time = datetime.now(timezone.utc)
-    http_status = 200
-    response_content = None
 
     try:
-        # Ensure request_data is string or None
-        if request_data is not None and not isinstance(request_data, (str, bytes)):
-            request_data = str(request_data)
+        request_data = serialize_body(body)
+    except ValueError as e:
+        module.fail_json(msg=str(e))
+    headers = _request_headers(module.params["headers"], body)
 
-        # Send request for text-based operations
+    connection = get_connection(module)
+    start_time = datetime.now(timezone.utc)
+
+    try:
         response_content = connection.send_request(
             method=method,
             path=path,
             data=request_data,
             headers=headers,
         )
+    except AnsibleConnectionError as e:
+        module.fail_json(msg=f"REST API call failed: {to_native(e)}", elapsed=_elapsed(start_time))
 
-        # Retrieve the HTTP status via the dedicated RPC method on the httpapi plugin.
-        # send_request raises ConnectionError for all non-2xx, so any return here is
-        # always a success response; get_response_status() gives the precise code.
-        try:
-            http_status = connection.get_response_status()
-        except Exception:
-            http_status = 200
+    # send_request raises for non-2xx, so any response is a success; the httpapi plugin keeps the exact code
+    try:
+        http_status = connection.get_response_status()
+    except AnsibleConnectionError:
+        http_status = 200
 
-        elapsed = int((datetime.now(timezone.utc) - start_time).total_seconds())
-        success = (200 <= http_status <= 299) or (method == "DELETE" and http_status == 404)
+    success = (200 <= http_status <= 299) or (method == "DELETE" and http_status == 404)
+    content, result = _build_result(response_content, http_status, _elapsed(start_time))
+    result["changed"] = method != "GET" and success
 
-        # Process text response content
-        content = None
-        if response_content is not None:
-            if isinstance(response_content, (dict, list)):
-                # Already parsed JSON by httpapi
-                content = response_content
-            elif isinstance(response_content, str):
-                # String response
-                content = response_content
-            else:
-                # Other types - convert to string
-                content = str(response_content) if response_content is not None else None
+    # Write to destination file if specified (text only)
+    if dest and success and content is not None:
+        write_file(module, dest, content if isinstance(content, str) else json.dumps(content, indent=2))
+        result["path"] = dest
+        result["changed"] = True
 
-        # Try to parse as JSON if appropriate
-        response_json = None
-        if content is not None:
-            if isinstance(content, dict) or isinstance(content, list):
-                # Already a parsed data structure
-                response_json = content
-            elif isinstance(content, str):
-                # Try to parse string as JSON
-                try:
-                    response_json = json.loads(content)
-                except (json.JSONDecodeError, ValueError, TypeError):
-                    # Not JSON - leave as string
-                    pass
+    if not success:
+        result["msg"] = f"HTTP status {http_status} is not 2xx"
+        module.fail_json(**result)
 
-        # Build result
-        result = {
-            'status': http_status,
-            'elapsed': elapsed,
-            'changed': method != 'GET' and success,
-            'headers': {},
-        }
-
-        # Add content when server returned a response body
-        if content is not None:
-            if isinstance(content, str):
-                result["content"] = content
-            else:
-                result["content"] = json.dumps(content)
-
-        # Add JSON if valid
-        if response_json is not None:
-            result["json"] = response_json
-
-        # Write to destination file if specified (text only)
-        if dest and success and content is not None:
-            write_content = content
-            if isinstance(content, (dict, list)):
-                write_content = json.dumps(content, indent=2)
-            elif not isinstance(content, str):
-                write_content = str(content)
-
-            write_file(module, dest, write_content)
-            result["path"] = dest
-            result["changed"] = True
-
-        # Fail on non-2xx
-        if not success:
-            result["msg"] = f"HTTP status {http_status} is not 2xx"
-            module.fail_json(**result)
-
-        module.exit_json(**result)
-
-    except Exception as e:
-        elapsed = int((datetime.now(timezone.utc) - start_time).total_seconds())
-        module.fail_json(
-            msg=f"REST API call failed: {to_native(e)}",
-            elapsed=elapsed
-        )
+    module.exit_json(**result)
 
 
 if __name__ == "__main__":

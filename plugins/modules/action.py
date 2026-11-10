@@ -15,7 +15,11 @@ operations that operate on individual resource instances.
 import json
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.connection import Connection
+from ansible.module_utils.connection import ConnectionError as AnsibleConnectionError
+from ansible_collections.nokia.nsp.plugins.module_utils.nsp import (  # pylint: disable=import-error
+    get_connection,
+    response_body,
+)
 
 # Validate Python version and required packages (optional fallback)
 try:
@@ -104,30 +108,30 @@ def run_module():
     Sends POST request to RESTCONF data endpoint with action.
     Returns parsed response or failure details.
     """
-    module_args = dict(
-        path=dict(type="str", required=True),
-        operation=dict(type="str", required=True),
-        input=dict(type="dict", required=False, default={}),
-    )
+    module_args = {
+        "path": {"type": "str", "required": True},
+        "operation": {"type": "str", "required": True},
+        "input": {"type": "dict", "required": False, "default": {}},
+    }
 
-    result = dict(
-        changed=False,
-        output={}
-    )
+    result = {
+        "changed": False,
+        "output": {}
+    }
 
     module = AnsibleModule(
         argument_spec=module_args,
         supports_check_mode=True
     )
 
-    connection = Connection(module._socket_path)
+    connection = get_connection(module)
 
     resource_path = module.params["path"]
     action_name = module.params["operation"]
     action_input = module.params["input"]
 
     # Build RESTCONF path: /restconf/data/{resource}/{action}
-    path = "/restconf/data/{0}/{1}".format(resource_path, action_name)
+    path = f"/restconf/data/{resource_path}/{action_name}"
 
     body = _build_request_body(action_name, action_input)
 
@@ -136,20 +140,19 @@ def run_module():
         "Accept": "application/json"
     }
 
+    payload = json.dumps(body) if body else None
     try:
-        payload = json.dumps(body) if body else None
         response = connection.send_request(
             payload, path=path, method='POST', headers=headers
         )
-        response = response[1] if isinstance(response, tuple) and len(response) > 1 else response
-        result['output'] = _parse_response(response)
-        module.exit_json(**result)
-
-    except Exception as exc:
+    except AnsibleConnectionError as exc:
         module.fail_json(
-            msg="Action execution failed: {0}".format(str(exc)),
+            msg=f"Action execution failed: {exc}",
             **result
         )
+
+    result['output'] = _parse_response(response_body(response))
+    module.exit_json(**result)
 
 
 def _build_request_body(action_name, action_input):

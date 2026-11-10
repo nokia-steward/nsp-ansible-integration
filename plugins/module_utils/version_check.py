@@ -206,7 +206,7 @@ def check_all_requirements():
         error_msg += "  2. Install/upgrade requirements: pip install -r requirements.txt\n"
         error_msg += "  3. In development: pip install -r requirements-dev.txt\n"
         error_msg += "  4. Verify virtual environment is activated\n"
-        error_msg += f"  5. Minimum requirements:\n"
+        error_msg += "  5. Minimum requirements:\n"
 
         for package_name, version in REQUIRED_PACKAGES.items():
             error_msg += f"       - {package_name} >= {version}\n"

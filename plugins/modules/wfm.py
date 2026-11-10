@@ -13,12 +13,17 @@ Follows the same logic as the VS Code Workflow Manager extension.
 """
 
 import json
-import yaml
 from pathlib import Path
 
+import yaml
+
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.connection import Connection
+from ansible.module_utils.connection import ConnectionError as AnsibleConnectionError
 from ansible.module_utils.common.text.converters import to_native
+from ansible_collections.nokia.nsp.plugins.module_utils.nsp import (  # pylint: disable=import-error
+    get_connection,
+    response_body,
+)
 
 # Validate Python version and required packages (optional fallback)
 try:
@@ -217,14 +222,36 @@ def get_workflow_by_name(connection, workflow_name):
     Returns:
         Workflow details dict if found, None otherwise.
     """
-    data = connection.send_request(None, path="/wfm/api/v1/workflow", method="GET")
-    data = data[1] if isinstance(data, tuple) and len(data) > 1 else data
+    data = response_body(connection.send_request(None, path="/wfm/api/v1/workflow", method="GET"))
     workflows = data.get("response", {}).get("data", [])
 
     for workflow in workflows:
         if workflow.get("name") == workflow_name:
             return workflow
     return None
+
+
+def _validate_definition(module, connection, definition, workflow_name):
+    """Validate a workflow definition on NSP; fail the module if it is invalid."""
+    try:
+        data = response_body(connection.send_request(
+            definition,
+            path="/wfm/api/v1/workflow/validate",
+            method="POST",
+            content_type="text/plain"
+        ))
+    except AnsibleConnectionError as e:
+        module.fail_json(
+            msg=f"Workflow validation error: {to_native(e)}",
+            workflow_name=workflow_name
+        )
+
+    validation = data.get("response", {}).get("data", {})
+    if validation.get("valid", "false") != "true":
+        module.fail_json(
+            msg=f"Workflow validation failed: {validation.get('error', '')}",
+            workflow_name=workflow_name
+        )
 
 
 def handle_define(module, connection, definition):
@@ -240,7 +267,7 @@ def handle_define(module, connection, definition):
     """
     try:
         wfdata = yaml.safe_load(definition)
-    except Exception as e:
+    except yaml.YAMLError as e:
         module.fail_json(msg=f"Failed to parse workflow definition: {to_native(e)}")
 
     if not isinstance(wfdata, dict):
@@ -254,27 +281,7 @@ def handle_define(module, connection, definition):
 
     # In check-mode: validate only
     if module.check_mode:
-        try:
-            data = connection.send_request(
-                definition,
-                path="/wfm/api/v1/workflow/validate",
-                method="POST",
-                content_type="text/plain"
-            )
-            data = data[1] if isinstance(data, tuple) and len(data) > 1 else data
-        except Exception as e:
-            module.fail_json(
-                msg=f"Workflow validation error: {to_native(e)}",
-                workflow_name=workflow_name
-            )
-
-        if data.get("response", {}).get("data", {}).get("valid", "false") != "true":
-            error = data.get("response", {}).get("data", {}).get("error", "")
-            module.fail_json(
-                msg=f"Workflow validation failed: {error}",
-                workflow_name=workflow_name
-            )
-
+        _validate_definition(module, connection, definition, workflow_name)
         return {
             "changed": True,
             "workflow_name": workflow_name,
@@ -314,7 +321,7 @@ def handle_define(module, connection, definition):
                     content_type="text/plain"
                 )
                 msg = "Workflow updated"
-            except Exception as e:
+            except AnsibleConnectionError as e:
                 module.fail_json(
                     msg=f"Failed to update workflow: {to_native(e)}",
                     workflow_name=workflow_name
@@ -322,22 +329,20 @@ def handle_define(module, connection, definition):
         else:
             try:
                 # Create new workflow
-                data = connection.send_request(
+                data = response_body(connection.send_request(
                     definition,
                     path="/wfm/api/v1/workflow/definition?provider=&version=",
                     method="POST",
                     content_type="text/plain"
-                )
-                data = data[1] if isinstance(data, tuple) and len(data) > 1 else data
-
-                workflow_info = data.get("response", {}).get("data", [{}])[0]
-                workflow_id = workflow_info.get("id")
-                msg = "Workflow created"
-            except Exception as e:
+                ))
+            except AnsibleConnectionError as e:
                 module.fail_json(
                     msg=f"Failed to create workflow: {to_native(e)}",
                     workflow_name=workflow_name
                 )
+            workflow_info = data.get("response", {}).get("data", [{}])[0]
+            workflow_id = workflow_info.get("id")
+            msg = "Workflow created"
 
     try:
         # Update workflow lifecycle state to PUBLISHED
@@ -346,7 +351,7 @@ def handle_define(module, connection, definition):
             path=f"/wfm/api/v1/workflow/{workflow_id}/status",
             method="PUT"
         )
-    except Exception as e:
+    except AnsibleConnectionError as e:
         module.fail_json(
             msg=f"Failed to publish workflow: {to_native(e)}",
             workflow_name=workflow_name
@@ -359,6 +364,30 @@ def handle_define(module, connection, definition):
         "status": "PUBLISHED",
         "msg": msg
     }
+
+
+def _find_workflow_file(module, upload_path_str):
+    """Return the workflow YAML file: the given file, or the single YAML file in the given directory."""
+    upload_path = Path(upload_path_str)
+
+    if not upload_path.exists():
+        module.fail_json(msg=f"Path does not exist: {upload_path_str}")
+
+    if upload_path.is_file():
+        return upload_path
+
+    if not upload_path.is_dir():
+        module.fail_json(msg=f"Path is neither file nor directory: {upload_path_str}")
+
+    yaml_files = list(upload_path.glob("*.yaml")) + list(upload_path.glob("*.yml"))
+    if not yaml_files:
+        module.fail_json(msg=f"No YAML files found in directory: {upload_path_str}")
+    if len(yaml_files) > 1:
+        module.fail_json(
+            msg=f"Directory must contain exactly one workflow YAML file, found {len(yaml_files)}",
+            files=[str(f) for f in yaml_files]
+        )
+    return yaml_files[0]
 
 
 def handle_upload(module, connection, upload_path_str):
@@ -376,40 +405,15 @@ def handle_upload(module, connection, upload_path_str):
     Returns:
         Result dictionary with workflow_id, workflow_name, status, msg, changed.
     """
-    upload_path = Path(upload_path_str)
-
-    if not upload_path.exists():
-        module.fail_json(msg=f"Path does not exist: {upload_path_str}")
-
-    # Find the workflow YAML file
-    if upload_path.is_file():
-        yaml_file = upload_path
-        parent_dir = yaml_file.parent
-        base_name = yaml_file.stem
-    elif upload_path.is_dir():
-        # Find single YAML file in directory
-        yaml_files = list(upload_path.glob("*.yaml")) + list(upload_path.glob("*.yml"))
-
-        if not yaml_files:
-            module.fail_json(msg=f"No YAML files found in directory: {upload_path_str}")
-
-        if len(yaml_files) > 1:
-            module.fail_json(
-                msg=f"Directory must contain exactly one workflow YAML file, found {len(yaml_files)}",
-                files=[str(f) for f in yaml_files]
-            )
-
-        yaml_file = yaml_files[0]
-        base_name = yaml_file.stem
-        parent_dir = yaml_file.parent
-    else:
-        module.fail_json(msg=f"Path is neither file nor directory: {upload_path_str}")
+    yaml_file = _find_workflow_file(module, upload_path_str)
+    parent_dir = yaml_file.parent
+    base_name = yaml_file.stem
 
     # Read workflow definition
     try:
         with open(yaml_file, "r", encoding="utf-8") as f:
             definition = f.read()
-    except Exception as e:
+    except OSError as e:
         module.fail_json(msg=f"Failed to read workflow file: {to_native(e)}")
 
     # Use handle_define to create/update workflow
@@ -434,7 +438,7 @@ def handle_upload(module, connection, upload_path_str):
                 content_type="text/plain"
             )
             result["msg"] += ", README updated"
-        except Exception as e:
+        except (AnsibleConnectionError, OSError) as e:
             module.fail_json(
                 msg=f"Failed to upload README: {to_native(e)}",
                 workflow_name=result["workflow_name"]
@@ -452,7 +456,7 @@ def handle_upload(module, connection, upload_path_str):
                 method="PUT"
             )
             result["msg"] += ", UI schema updated"
-        except Exception as e:
+        except (AnsibleConnectionError, OSError) as e:
             module.fail_json(
                 msg=f"Failed to upload UI schema: {to_native(e)}",
                 workflow_name=result["workflow_name"]
@@ -479,12 +483,10 @@ def handle_execute(module, connection, workflow_identifier, input_params):
         workflow_id = workflow_identifier
     else:
         # Treat as workflow name
-        workflow_name = workflow_identifier
-        workflow = get_workflow_by_name(connection, workflow_name)
-        if workflow:
-            workflow_id = workflow["id"]
-        else:
-            module.fail_json(msg=f"Workflow not found: {workflow_name}")
+        workflow = get_workflow_by_name(connection, workflow_identifier)
+        if not workflow:
+            module.fail_json(msg=f"Workflow not found: {workflow_identifier}")
+        workflow_id = workflow["id"]
 
     # In check-mode: skip execution, just report what would happen
     if module.check_mode:
@@ -502,13 +504,12 @@ def handle_execute(module, connection, workflow_identifier, input_params):
     }
 
     try:
-        data = connection.send_request(
+        data = response_body(connection.send_request(
             json.dumps(body),
             path="/wfm/api/v1/execution/synchronous",
             method="POST"
-        )
-        data = data[1] if isinstance(data, tuple) and len(data) > 1 else data
-    except Exception as e:
+        ))
+    except AnsibleConnectionError as e:
         module.fail_json(
             msg=f"Failed to execute workflow: {to_native(e)}",
             workflow_id=workflow_id
@@ -566,7 +567,7 @@ def handle_delete(module, connection, workflow_identifier):
             path=f"/wfm/api/v1/workflow/{workflow_id}",
             method="DELETE"
         )
-    except Exception as e:
+    except AnsibleConnectionError as e:
         error_str = to_native(e)
         # Check if workflow doesn't exist (404 error) - idempotent behavior
         if "404" in error_str or "Workflow not found" in error_str:
@@ -588,13 +589,13 @@ def handle_delete(module, connection, workflow_identifier):
 def main():
     """Main module execution."""
     module = AnsibleModule(
-        argument_spec=dict(
-            upload=dict(type="path", required=False),
-            define=dict(type="str", required=False),
-            execute=dict(type="str", required=False),
-            delete=dict(type="str", required=False),
-            input=dict(type="dict", default={}),
-        ),
+        argument_spec={
+            "upload": {"type": "path", "required": False},
+            "define": {"type": "str", "required": False},
+            "execute": {"type": "str", "required": False},
+            "delete": {"type": "str", "required": False},
+            "input": {"type": "dict", "default": {}},
+        },
         mutually_exclusive=[
             ["upload", "define", "execute", "delete"]
         ],
@@ -604,10 +605,7 @@ def main():
         supports_check_mode=True
     )
 
-    try:
-        connection = Connection(module._socket_path)
-    except Exception as e:
-        module.fail_json(msg=f"Failed to establish connection: {to_native(e)}")
+    connection = get_connection(module)
 
     upload = module.params.get("upload")
     define = module.params.get("define")

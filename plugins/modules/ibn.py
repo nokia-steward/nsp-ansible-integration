@@ -16,8 +16,12 @@ from pathlib import Path
 from urllib.parse import quote, unquote
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.connection import Connection
+from ansible.module_utils.connection import ConnectionError as AnsibleConnectionError
 from ansible.module_utils.common.text.converters import to_native
+from ansible_collections.nokia.nsp.plugins.module_utils.nsp import (  # pylint: disable=import-error
+    get_connection,
+    response_body,
+)
 
 RESTCONF_YANG_JSON = "application/yang-data+json"
 RESTCONF_JSON = "application/json"
@@ -202,29 +206,34 @@ def resolve_intent_root_dir(module, path_param):
     """Resolve path to intent-type root (directory or parent of meta-info.json). Returns Path."""
     path = Path(path_param).resolve()
     if not path.exists():
-        module.fail_json(msg="Path does not exist: {0}".format(path_param))
+        module.fail_json(msg=f"Path does not exist: {path_param}")
     if path.is_file():
         if path.name != "meta-info.json":
-            module.fail_json(msg="Path must be a directory or meta-info.json, got: {0}".format(path.name))
+            module.fail_json(msg=f"Path must be a directory or meta-info.json, got: {path.name}")
         return path.parent
     return path
 
 
-def get_intent_type_and_version_from_meta(module, intent_dir):
-    """Read intent-type and version from meta-info.json. Returns (intent_type, version) strings."""
-    intent_dir = Path(intent_dir)
-    meta_path = intent_dir / "meta-info.json"
+def _read_meta(module, intent_dir):
+    """Return the parsed meta-info.json of an intent-type directory."""
+    meta_path = Path(intent_dir) / "meta-info.json"
     if not meta_path.exists():
-        module.fail_json(msg="meta-info.json not found in {0}".format(intent_dir))
+        module.fail_json(msg=f"meta-info.json not found in {intent_dir}")
     try:
         with open(meta_path, "r", encoding="utf-8") as f:
-            meta = json.load(f)
-    except Exception as e:
-        module.fail_json(msg="Failed to parse meta-info.json: {0}".format(to_native(e)))
+            return json.load(f)
+    except (OSError, ValueError) as e:
+        module.fail_json(msg=f"Failed to parse meta-info.json: {to_native(e)}")
+    return None
+
+
+def get_intent_type_and_version_from_meta(module, intent_dir):
+    """Read intent-type and version from meta-info.json. Returns (intent_type, version) strings."""
+    meta = _read_meta(module, intent_dir)
     intent_type = meta.get("intent-type")
     version = meta.get("version")
     if not intent_type:
-        module.fail_json(msg="meta-info.json must contain 'intent-type', got: {0}".format(list(meta.keys())))
+        module.fail_json(msg=f"meta-info.json must contain 'intent-type', got: {list(meta.keys())}")
     if version is None:
         module.fail_json(msg="meta-info.json must contain 'version'")
     return str(intent_type), str(version)
@@ -233,18 +242,17 @@ def get_intent_type_and_version_from_meta(module, intent_dir):
 def _resource_exists(connection, path, accept=RESTCONF_JSON):
     """Return True if GET path returns a resource (not 404)."""
     try:
-        data = connection.send_request(None, path=path, method="GET", accept=accept)
-        data = data[1] if isinstance(data, tuple) and len(data) > 1 else data
-        return isinstance(data, dict) and not is_restconf_not_found_response(data)
-    except Exception as e:
+        data = response_body(connection.send_request(None, path=path, method="GET", accept=accept))
+    except AnsibleConnectionError as e:
         if "404" in to_native(e).lower() or "not found" in to_native(e).lower():
             return False
         raise
+    return isinstance(data, dict) and not is_restconf_not_found_response(data)
 
 
 def catalog_path(intent_type, version):
     """RESTCONF path for single intent-type in catalog."""
-    return "{0}/intent-type={1},{2}".format(CATALOG_ROOT, intent_type, version)
+    return f"{CATALOG_ROOT}/intent-type={intent_type},{version}"
 
 
 def is_restconf_not_found_response(data):
@@ -311,17 +319,16 @@ def is_restconf_error_response(data):
 
 def intent_path(target, intent_type):
     """RESTCONF path for a single intent (target,intent_type)."""
-    return "{0}/intent={1},{2}".format(IBN_DATA, quote(target, safe=""), intent_type)
+    return f"{IBN_DATA}/intent={quote(target, safe='')},{intent_type}"
 
 
 def intent_get(connection, target, intent_type):
     """GET intent; returns (None, None) if not found, else (intent_specific_data, required_state)."""
     try:
-        data = connection.send_request(
+        data = response_body(connection.send_request(
             None, path=intent_path(target, intent_type), method="GET", accept=RESTCONF_YANG_JSON
-        )
-        data = data[1] if isinstance(data, tuple) and len(data) > 1 else data
-    except Exception as e:
+        ))
+    except AnsibleConnectionError as e:
         if "404" in to_native(e).lower() or "not found" in to_native(e).lower():
             return None, None
         raise
@@ -356,13 +363,9 @@ def _fail_on_operation_error(module, operation, target, intent_type, op_result):
         op_result.get("restconf_errors")
     )
     if err_msg:
-        message = "IBN {0} failed for intent {1}/{2}: {3}".format(
-            operation, intent_type, target, err_msg
-        )
+        message = f"IBN {operation} failed for intent {intent_type}/{target}: {err_msg}"
     else:
-        message = "IBN {0} failed for intent {1}/{2}: {3}".format(
-            operation, intent_type, target, err_raw
-        )
+        message = f"IBN {operation} failed for intent {intent_type}/{target}: {err_raw}"
     module.fail_json(
         msg=message,
         failed=True,
@@ -380,34 +383,35 @@ def _run_intent_operation(connection, target, intent_type, operation):
     path = intent_path(target, intent_type) + "/" + operation
     body = json.dumps({"ibn:input": {}})
     try:
-        out = connection.send_request(
+        out = response_body(connection.send_request(
             body,
             path=path,
             method="POST",
             content_type=RESTCONF_YANG_JSON,
             accept=RESTCONF_YANG_JSON,
-        )
-        out = out[1] if isinstance(out, tuple) and len(out) > 1 else out
-        if is_restconf_error_response(out):
-            return {"error": to_native(out), "restconf_errors": out}
-        return out if isinstance(out, dict) else {"raw": out}
-    except Exception as e:
+        ))
+    except AnsibleConnectionError as e:
         err_msg = to_native(e)
         return {"error": err_msg, "restconf_errors": _error_body_from_exception(err_msg)}
+    if is_restconf_error_response(out):
+        return {"error": to_native(out), "restconf_errors": out}
+    return out if isinstance(out, dict) else {"raw": out}
 
 
-def handle_add_intent(
-    module, connection, target, intent_type, version, config, desired_state, perform
-):
-    """Create or update intent; return dict with changed, msg, optional audit_result/sync_result."""
+def _apply_intent(connection, params):
+    """Create the intent or update its config and state; return (changed, msg)."""
+    target = params["target"]
+    intent_type = params["intent_type"]
+    config = params["config"]
+    desired_state = params["desired_state"]
+
     existing_data, existing_state = intent_get(connection, target, intent_type)
-    created = existing_data is None
-    if created:
+    if existing_data is None:
         body = {
             "ibn:intent": {
                 "target": target,
                 "intent-type": intent_type,
-                "intent-type-version": version,
+                "intent-type-version": params["version"],
                 "ibn:intent-specific-data": config,
                 "required-network-state": desired_state,
             }
@@ -416,70 +420,68 @@ def handle_add_intent(
             json.dumps(body), path=IBN_DATA, method="POST",
             content_type=RESTCONF_YANG_JSON, accept=RESTCONF_YANG_JSON,
         )
-        changed = True
-        msg = "Intent {0}/{1} created".format(intent_type, target)
-    else:
-        data_changed = not _config_equal(existing_data, config)
-        state_changed = (existing_state or "active") != desired_state
-        changed = data_changed or state_changed
-        if data_changed:
-            put_path = intent_path(target, intent_type) + "/intent-specific-data"
-            connection.send_request(
-                json.dumps({"ibn:intent-specific-data": config}),
-                path=put_path,
-                method="PUT",
-                content_type=RESTCONF_YANG_JSON,
-                accept=RESTCONF_YANG_JSON,
-            )
-        if state_changed:
-            connection.send_request(
-                json.dumps({"ibn:intent": {"required-network-state": desired_state}}),
-                path=intent_path(target, intent_type),
-                method="PATCH",
-                content_type=RESTCONF_YANG_JSON,
-                accept=RESTCONF_YANG_JSON,
-            )
-        if not changed:
-            msg = "Intent {0}/{1} unchanged".format(intent_type, target)
-        else:
-            msg = "Intent {0}/{1} updated".format(intent_type, target)
+        return True, f"Intent {intent_type}/{target} created"
 
+    data_changed = not _config_equal(existing_data, config)
+    state_changed = (existing_state or "active") != desired_state
+    if data_changed:
+        connection.send_request(
+            json.dumps({"ibn:intent-specific-data": config}),
+            path=intent_path(target, intent_type) + "/intent-specific-data",
+            method="PUT",
+            content_type=RESTCONF_YANG_JSON,
+            accept=RESTCONF_YANG_JSON,
+        )
+    if state_changed:
+        connection.send_request(
+            json.dumps({"ibn:intent": {"required-network-state": desired_state}}),
+            path=intent_path(target, intent_type),
+            method="PATCH",
+            content_type=RESTCONF_YANG_JSON,
+            accept=RESTCONF_YANG_JSON,
+        )
+    if data_changed or state_changed:
+        return True, f"Intent {intent_type}/{target} updated"
+    return False, f"Intent {intent_type}/{target} unchanged"
+
+
+def handle_add_intent(module, connection, params):
+    """Create or update intent; return dict with changed, msg, optional audit_result/sync_result."""
+    target = params["target"]
+    intent_type = params["intent_type"]
+    perform = params["perform"]
+
+    changed, msg = _apply_intent(connection, params)
     result = {
         "target": target,
         "intent_type": intent_type,
-        "version": version,
+        "version": params["version"],
         "changed": changed,
         "msg": msg,
     }
-    if perform == "audit":
-        result["audit_result"] = _run_intent_operation(connection, target, intent_type, "audit")
-        if result["audit_result"].get("error"):
-            _fail_on_operation_error(
-                module, "audit", target, intent_type, result["audit_result"]
-            )
-    elif perform == "synchronize":
-        result["sync_result"] = _run_intent_operation(
-            connection, target, intent_type, "synchronize"
-        )
-        if result["sync_result"].get("error"):
-            _fail_on_operation_error(
-                module, "synchronize", target, intent_type, result["sync_result"]
-            )
+    if perform:
+        key = "audit_result" if perform == "audit" else "sync_result"
+        result[key] = _run_intent_operation(connection, target, intent_type, perform)
+        if result[key].get("error"):
+            _fail_on_operation_error(module, perform, target, intent_type, result[key])
     return result
 
 
-def handle_delete_intent(module, connection, target, intent_type, remove_from_network):
+def handle_delete_intent(module, connection, params):
     """Delete intent; idempotent (no error if already absent)."""
+    target = params["target"]
+    intent_type = params["intent_type"]
+
     existing_data, _ = intent_get(connection, target, intent_type)
     if existing_data is None:
         return {
             "target": target,
             "intent_type": intent_type,
             "changed": False,
-            "msg": "Intent {0}/{1} already absent".format(intent_type, target),
+            "msg": f"Intent {intent_type}/{target} already absent",
         }
 
-    if remove_from_network:
+    if params["remove_from_network"]:
         connection.send_request(
             json.dumps({"ibn:intent": {"required-network-state": "delete"}}),
             path=intent_path(target, intent_type),
@@ -502,73 +504,140 @@ def handle_delete_intent(module, connection, target, intent_type, remove_from_ne
         "target": target,
         "intent_type": intent_type,
         "changed": True,
-        "msg": "Intent {0}/{1} deleted".format(intent_type, target),
+        "msg": f"Intent {intent_type}/{target} deleted",
     }
 
 
-def handle_upload(module, connection, path):
-    """Upload intent-type from path (folder or meta-info.json). Always returns changed=True."""
-    intent_dir = resolve_intent_root_dir(module, path)
-    intent_dir = Path(intent_dir)
-    intent_type, version = get_intent_type_and_version_from_meta(module, intent_dir)
+def _read_text(path):
+    """Return the content of a UTF-8 text file."""
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
 
-    # Build meta payload from directory (meta-info.json, script, yang-modules, resources)
-    meta_path = intent_dir / "meta-info.json"
-    try:
-        with open(meta_path, "r", encoding="utf-8") as f:
-            meta = json.load(f)
-    except Exception as e:
-        module.fail_json(msg="Failed to parse meta-info.json: {0}".format(to_native(e)))
-    script_js = intent_dir / "script-content.js"
-    script_mjs = intent_dir / "script-content.mjs"
-    if script_js.exists():
-        with open(script_js, "r", encoding="utf-8") as f:
-            meta["script-content"] = f.read()
-    elif script_mjs.exists():
-        with open(script_mjs, "r", encoding="utf-8") as f:
-            meta["script-content"] = f.read()
-    else:
-        module.fail_json(
-            msg="Neither script-content.js nor script-content.mjs found in {0}".format(intent_dir)
-        )
+
+def _read_script(module, intent_dir):
+    """Return the intent-type script (script-content.js or script-content.mjs)."""
+    for name in ("script-content.js", "script-content.mjs"):
+        script = intent_dir / name
+        if script.exists():
+            return _read_text(script)
+    module.fail_json(msg=f"Neither script-content.js nor script-content.mjs found in {intent_dir}")
+    return None
+
+
+def _read_yang_modules(module, intent_dir):
+    """Return the YANG modules of the intent-type as catalog entries."""
     yang_dir = intent_dir / "yang-modules"
     if not yang_dir.is_dir():
-        module.fail_json(msg="yang-modules directory not found in {0}".format(intent_dir))
-    modules = []
-    for f in yang_dir.iterdir():
-        if f.is_file() and not f.name.startswith("."):
-            with open(f, "r", encoding="utf-8") as fp:
-                modules.append({"name": f.name, "yang-content": fp.read()})
+        module.fail_json(msg=f"yang-modules directory not found in {intent_dir}")
+    modules = [
+        {"name": f.name, "yang-content": _read_text(f)}
+        for f in yang_dir.iterdir()
+        if f.is_file() and not f.name.startswith(".")
+    ]
     if not modules:
-        module.fail_json(msg="No YANG files found in yang-modules in {0}".format(intent_dir))
-    meta["module"] = modules
-    resources = []
+        module.fail_json(msg=f"No YANG files found in yang-modules in {intent_dir}")
+    return modules
+
+
+def _read_resources(intent_dir):
+    """Return the files below intent-type-resources as catalog entries, named by relative path."""
     res_dir = intent_dir / "intent-type-resources"
-    if res_dir.is_dir():
-        for f in res_dir.rglob("*"):
-            if f.is_file() and not f.name.startswith("."):
-                rel = f.relative_to(res_dir)
-                name = str(rel).replace("\\", "/")
-                with open(f, "r", encoding="utf-8") as fp:
-                    resources.append({"name": name, "value": fp.read()})
-    meta["resource"] = resources
-    for key in ("resourceDirectory", "supported-hardware-types"):
+    if not res_dir.is_dir():
+        return []
+    return [
+        {"name": str(f.relative_to(res_dir)).replace("\\", "/"), "value": _read_text(f)}
+        for f in res_dir.rglob("*")
+        if f.is_file() and not f.name.startswith(".")
+    ]
+
+
+def _intent_type_payload(module, intent_dir, intent_type, version):
+    """Build the intent-type catalog entry from meta-info.json, script, YANG modules and resources."""
+    meta = _read_meta(module, intent_dir)
+    meta["script-content"] = _read_script(module, intent_dir)
+    meta["module"] = _read_yang_modules(module, intent_dir)
+    meta["resource"] = _read_resources(intent_dir)
+    for key in ("resourceDirectory", "supported-hardware-types", "intent-type"):
         meta.pop(key, None)
     if "custom-field" in meta and not isinstance(meta["custom-field"], str):
         meta["custom-field"] = json.dumps(meta["custom-field"])
-
-    meta.pop("intent-type", None)
     meta["name"] = intent_type
     meta["version"] = int(version)
-    if "targetted-device" in meta:
-        for idx, entry in enumerate(meta["targetted-device"]):
-            if "index" not in entry:
-                entry["index"] = idx
+    for idx, entry in enumerate(meta.get("targetted-device", [])):
+        entry.setdefault("index", idx)
+    return {"ibn-administration:intent-type": meta}
+
+
+def _upload_views(connection, intent_dir, intent_type, version):
+    """Upload views/*.viewConfig to the intent-type config store; return the number of views."""
+    views_dir = intent_dir / "views"
+    if not views_dir.is_dir():
+        return 0
+    view_url = f"{VIEW_CONFIG}/intent-type-configs={intent_type},{version}"
+    view_files = [f for f in views_dir.iterdir() if f.is_file() and f.name.endswith(".viewConfig")]
+    for view_path in view_files:
+        patch_body = {
+            "nsp-intent-type-config-store:intent-type-configs": [
+                {"views": [{"name": view_path.name[:-len(".viewConfig")], "viewconfig": _read_text(view_path)}]}
+            ]
+        }
+        connection.send_request(
+            json.dumps(patch_body),
+            path=view_url,
+            method="PATCH",
+            content_type=RESTCONF_YANG_JSON,
+            accept=RESTCONF_YANG_JSON,
+        )
+    return len(view_files)
+
+
+def _upload_intents(connection, intent_dir, intent_type, version):
+    """Create or update the intents in intents/<target>.json; return the number of intents."""
+    intents_dir = intent_dir / "intents"
+    if not intents_dir.is_dir():
+        return 0
+    count = 0
+    for f in intents_dir.iterdir():
+        if not f.is_file() or f.suffix != ".json":
+            continue
+        tgt = unquote(f.stem)
+        cfg = json.loads(_read_text(f))
+        intent_body = {
+            "ibn:intent": {
+                "target": tgt,
+                "intent-type": intent_type,
+                "intent-type-version": version,
+                "ibn:intent-specific-data": cfg,
+                "required-network-state": "active",
+            }
+        }
+        try:
+            connection.send_request(
+                json.dumps(intent_body),
+                path=IBN_DATA,
+                method="POST",
+                content_type=RESTCONF_YANG_JSON,
+                accept=RESTCONF_YANG_JSON,
+            )
+        except AnsibleConnectionError:
+            connection.send_request(
+                json.dumps({"ibn:intent-specific-data": cfg}),
+                path=intent_path(tgt, intent_type) + "/intent-specific-data",
+                method="PUT",
+                content_type=RESTCONF_YANG_JSON,
+                accept=RESTCONF_YANG_JSON,
+            )
+        count += 1
+    return count
+
+
+def handle_upload(module, connection, params):
+    """Upload intent-type from path (folder or meta-info.json). Always returns changed=True."""
+    intent_dir = resolve_intent_root_dir(module, params["path"])
+    intent_type, version = get_intent_type_and_version_from_meta(module, intent_dir)
+    body_json = json.dumps(_intent_type_payload(module, intent_dir, intent_type, version))
 
     path_str = catalog_path(intent_type, version)
-    body = {"ibn-administration:intent-type": meta}
-    body_json = json.dumps(body)
-
     if not _resource_exists(connection, path_str):
         connection.send_request(
             body_json,
@@ -577,7 +646,7 @@ def handle_upload(module, connection, path):
             content_type=RESTCONF_JSON,
             accept=RESTCONF_JSON,
         )
-        msg = "Intent-type {0}_v{1} created".format(intent_type, version)
+        msg = f"Intent-type {intent_type}_v{version} created"
     else:
         connection.send_request(
             body_json,
@@ -586,78 +655,22 @@ def handle_upload(module, connection, path):
             content_type=RESTCONF_JSON,
             accept=RESTCONF_JSON,
         )
-        msg = "Intent-type {0}_v{1} updated".format(intent_type, version)
+        msg = f"Intent-type {intent_type}_v{version} updated"
 
-    view_url = "{0}/intent-type-configs={1},{2}".format(VIEW_CONFIG, intent_type, version)
-    views_dir = intent_dir / "views"
-    if views_dir.is_dir():
-        view_files = [f for f in views_dir.iterdir() if f.is_file() and f.name.endswith(".viewConfig")]
-        for view_path in view_files:
-            view_name = view_path.name[:-11]
-            with open(view_path, "r", encoding="utf-8") as f:
-                view_content = f.read()
-            patch_body = {
-                "nsp-intent-type-config-store:intent-type-configs": [
-                    {"views": [{"name": view_name, "viewconfig": view_content}]}
-                ]
-            }
-            connection.send_request(
-                json.dumps(patch_body),
-                path=view_url,
-                method="PATCH",
-                content_type=RESTCONF_YANG_JSON,
-                accept=RESTCONF_YANG_JSON,
-            )
-        if view_files:
-            msg += ", {0} view(s) uploaded".format(len(view_files))
-
-    intents_dir = intent_dir / "intents"
-    if intents_dir.is_dir():
-        count = 0
-        for f in intents_dir.iterdir():
-            if f.is_file() and f.suffix == ".json":
-                tgt = unquote(f.stem)
-                with open(f, "r", encoding="utf-8") as fp:
-                    cfg = json.load(fp)
-                intent_body = {
-                    "ibn:intent": {
-                        "target": tgt,
-                        "intent-type": intent_type,
-                        "intent-type-version": version,
-                        "ibn:intent-specific-data": cfg,
-                        "required-network-state": "active",
-                    }
-                }
-                try:
-                    connection.send_request(
-                        json.dumps(intent_body),
-                        path=IBN_DATA,
-                        method="POST",
-                        content_type=RESTCONF_YANG_JSON,
-                        accept=RESTCONF_YANG_JSON,
-                    )
-                except Exception:
-                    put_path = intent_path(tgt, intent_type) + "/intent-specific-data"
-                    connection.send_request(
-                        json.dumps({"ibn:intent-specific-data": cfg}),
-                        path=put_path,
-                        method="PUT",
-                        content_type=RESTCONF_YANG_JSON,
-                        accept=RESTCONF_YANG_JSON,
-                    )
-                count += 1
-        if count > 0:
-            msg += ", {0} intent(s) uploaded".format(count)
+    view_count = _upload_views(connection, intent_dir, intent_type, version)
+    if view_count:
+        msg += f", {view_count} view(s) uploaded"
+    intent_count = _upload_intents(connection, intent_dir, intent_type, version)
+    if intent_count:
+        msg += f", {intent_count} intent(s) uploaded"
 
     return {"intent_type": intent_type, "version": int(version), "changed": True, "msg": msg}
 
 
-def handle_delete_intent_type(module, connection, path=None, intent_type=None, version=None, force=False):
+def handle_delete_intent_type(module, connection, params):
     """Delete intent-type; if force, delete all intents first. Always returns changed=True."""
-    if path is not None:
-        intent_dir = resolve_intent_root_dir(module, path)
-        intent_type, version_str = get_intent_type_and_version_from_meta(module, intent_dir)
-        version = int(version_str)
+    intent_type = params["intent_type"]
+    version = params["version"]
 
     path_str = catalog_path(intent_type, version)
     if not _resource_exists(connection, path_str):
@@ -665,7 +678,7 @@ def handle_delete_intent_type(module, connection, path=None, intent_type=None, v
             "intent_type": intent_type,
             "version": version,
             "changed": True,
-            "msg": "Intent-type {0}_v{1} does not exist".format(intent_type, version),
+            "msg": f"Intent-type {intent_type}_v{version} does not exist",
         }
 
     list_body = {
@@ -679,22 +692,22 @@ def handle_delete_intent_type(module, connection, path=None, intent_type=None, v
         }
     }
     try:
-        data = connection.send_request(
+        data = response_body(connection.send_request(
             json.dumps(list_body), path=SEARCH_INTENTS, method="POST",
             content_type=RESTCONF_YANG_JSON, accept=RESTCONF_YANG_JSON,
-        )
-        data = data[1] if isinstance(data, tuple) and len(data) > 1 else data
-    except Exception:
+        ))
+    except AnsibleConnectionError:
         data = {}
     output = (data.get("ibn:output") or data.get("output") or {}) if isinstance(data, dict) else {}
     intents = output.get("intents") or output.get("intent") or {}
     intent_list = intents.get("intent") if isinstance(intents.get("intent"), list) else []
     targets = [item.get("target") for item in intent_list if item.get("target")]
 
-    if targets and not force:
+    if targets and not params["force"]:
         module.fail_json(
-            msg="Intent-type {0}_v{1} has {2} intent(s). Use force=true to delete them and the intent-type.".format(
-                intent_type, version, len(targets)
+            msg=(
+                f"Intent-type {intent_type}_v{version} has {len(targets)} intent(s). "
+                "Use force=true to delete them and the intent-type."
             ),
             intent_type=intent_type,
             version=version,
@@ -705,18 +718,18 @@ def handle_delete_intent_type(module, connection, path=None, intent_type=None, v
             connection.send_request(
                 None, path=intent_path(tgt, intent_type), method="DELETE", accept=RESTCONF_YANG_JSON
             )
-        except Exception as e:
+        except AnsibleConnectionError as e:
             module.fail_json(
-                msg="Failed to delete intent {0}: {1}".format(tgt, to_native(e)),
+                msg=f"Failed to delete intent {tgt}: {to_native(e)}",
                 intent_type=intent_type,
                 version=version,
             )
 
     try:
         connection.send_request(None, path=path_str, method="DELETE", accept=RESTCONF_JSON)
-    except Exception as e:
+    except AnsibleConnectionError as e:
         module.fail_json(
-            msg="Failed to delete intent-type: {0}".format(to_native(e)),
+            msg=f"Failed to delete intent-type: {to_native(e)}",
             intent_type=intent_type,
             version=version,
         )
@@ -725,29 +738,29 @@ def handle_delete_intent_type(module, connection, path=None, intent_type=None, v
         "intent_type": intent_type,
         "version": version,
         "changed": True,
-        "msg": "Intent-type {0}_v{1} deleted".format(intent_type, version),
+        "msg": f"Intent-type {intent_type}_v{version} deleted",
     }
 
 
 def main():
     """Main module execution."""
     module = AnsibleModule(
-        argument_spec=dict(
-            operation=dict(
-                type="str",
-                required=True,
-                choices=["upload_intent_type", "add_intent", "delete_intent", "delete_intent_type"],
-            ),
-            path=dict(type="path", default=None),
-            intent_type=dict(type="str", default=None),
-            version=dict(type="int", default=None),
-            target=dict(type="str", default=None),
-            config=dict(type="dict", default=None),
-            desired_state=dict(type="str", choices=["active", "suspend", "delete"], default="active"),
-            perform=dict(type="str", choices=["audit", "synchronize"], default=None),
-            remove_from_network=dict(type="bool", default=False),
-            force=dict(type="bool", default=False),
-        ),
+        argument_spec={
+            "operation": {
+                "type": "str",
+                "required": True,
+                "choices": ["upload_intent_type", "add_intent", "delete_intent", "delete_intent_type"],
+            },
+            "path": {"type": "path", "default": None},
+            "intent_type": {"type": "str", "default": None},
+            "version": {"type": "int", "default": None},
+            "target": {"type": "str", "default": None},
+            "config": {"type": "dict", "default": None},
+            "desired_state": {"type": "str", "choices": ["active", "suspend", "delete"], "default": "active"},
+            "perform": {"type": "str", "choices": ["audit", "synchronize"], "default": None},
+            "remove_from_network": {"type": "bool", "default": False},
+            "force": {"type": "bool", "default": False},
+        },
         required_if=[
             ["operation", "upload_intent_type", ["path"]],
             ["operation", "add_intent", ["intent_type", "version", "target", "config"]],
@@ -756,37 +769,19 @@ def main():
         ],
     )
 
-    try:
-        connection = Connection(module._socket_path)
-    except Exception as e:
-        module.fail_json(msg="Failed to establish connection: {0}".format(to_native(e)))
+    handlers = {
+        "upload_intent_type": handle_upload,
+        "add_intent": handle_add_intent,
+        "delete_intent": handle_delete_intent,
+        "delete_intent_type": handle_delete_intent_type,
+    }
+    connection = get_connection(module)
 
-    params = module.params
-    operation = params["operation"]
-
     try:
-        if operation == "upload_intent_type":
-            result = handle_upload(module, connection, params["path"])
-        elif operation == "add_intent":
-            result = handle_add_intent(
-                module, connection,
-                params["target"], params["intent_type"], params["version"],
-                params["config"], params["desired_state"], params["perform"],
-            )
-        elif operation == "delete_intent":
-            result = handle_delete_intent(
-                module, connection, params["target"], params["intent_type"],
-                params["remove_from_network"],
-            )
-        else:
-            result = handle_delete_intent_type(
-                module, connection, path=None,
-                intent_type=params["intent_type"], version=params["version"],
-                force=params["force"],
-            )
-        module.exit_json(**result)
-    except Exception as e:
-        module.fail_json(msg="IBN module error: {0}".format(to_native(e)))
+        result = handlers[module.params["operation"]](module, connection, module.params)
+    except (AnsibleConnectionError, OSError, ValueError) as e:
+        module.fail_json(msg=f"IBN module error: {to_native(e)}")
+    module.exit_json(**result)
 
 
 if __name__ == "__main__":

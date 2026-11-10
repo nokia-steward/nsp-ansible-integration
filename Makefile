@@ -131,7 +131,7 @@ lint: flake8 pylint yamllint
 
 flake8:
 	@echo "Running Flake8 strict code quality check..."
-	flake8 plugins/modules/*.py plugins/httpapi/*.py \
+	flake8 plugins/modules/*.py plugins/httpapi/*.py plugins/module_utils/*.py \
 		--config=.flake8 \
 		--show-source \
 		--statistics
@@ -139,10 +139,8 @@ flake8:
 
 pylint:
 	@echo "Running PyLint code analysis..."
-	pylint plugins/modules/*.py plugins/httpapi/*.py \
+	pylint plugins/modules/*.py plugins/httpapi/*.py plugins/module_utils/*.py \
 		--rcfile=.pylintrc \
-		--fail-under=8.0 \
-		--exit-zero \
 		--reports=no
 	@echo "✓ PyLint check passed"
 
@@ -185,7 +183,7 @@ validate: validate-syntax validate-ansible
 
 validate-syntax:
 	@echo "Validating Python syntax..."
-	python -m py_compile plugins/modules/*.py plugins/httpapi/*.py
+	python -m py_compile plugins/modules/*.py plugins/httpapi/*.py plugins/module_utils/*.py
 	@echo "✓ Python syntax valid"
 
 validate-ansible:

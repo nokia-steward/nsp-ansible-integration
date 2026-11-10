@@ -47,4 +47,4 @@ Here are some instructions to kickstart your automation journey:
 - **Install**: [Ansible Galaxy](https://galaxy.ansible.com/nokia/nsp)
 
 ---
-**Collection Version:** 1.0.1 | **License:** BSD 3-Clause | **Ansible Core:** 2.20+ (2.22 recommended) | **Python:** 3.12+ (3.13 recommended)
+**Collection Version:** 1.0.2 | **License:** BSD 3-Clause | **Ansible Core:** 2.20+ (2.22 recommended) | **Python:** 3.12+ (3.13 recommended)

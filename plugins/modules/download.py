@@ -13,10 +13,12 @@ Streaming downloads with atomic writes and MD5 verification.
 """
 
 import os
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.connection import Connection
+from ansible.module_utils.connection import ConnectionError as AnsibleConnectionError
 from ansible.module_utils.common.text.converters import to_native
+from ansible_collections.nokia.nsp.plugins.module_utils.nsp import get_connection  # pylint: disable=import-error
 
 # Validate Python version and required packages (optional fallback)
 try:
@@ -125,8 +127,6 @@ def build_download_url(remote_path=None, url=None):
         return url
 
     if remote_path:
-        from urllib.parse import quote
-
         if not remote_path.startswith("/"):
             remote_path = "/" + remote_path
         encoded_path = quote(remote_path, safe="")
@@ -142,15 +142,11 @@ def extract_filename(remote_path=None, url=None):
 
     if url:
         if "filePath=" in url:
-            from urllib.parse import unquote, parse_qs, urlparse
-
             parsed = urlparse(url)
             params = parse_qs(parsed.query)
             if "filePath" in params:
                 file_path = unquote(params["filePath"][0])
                 return os.path.basename(file_path)
-
-        from urllib.parse import urlparse
 
         path = urlparse(url).path
         return os.path.basename(path) or "downloaded_file"
@@ -187,27 +183,25 @@ def download_file(module, connection, remote_path, local_path, url=None):
         local_path = os.path.join(local_path, filename)
 
     try:
-        # Create parent directories
         dest_dir = os.path.dirname(local_path)
-        if dest_dir and not os.path.exists(dest_dir):
+        if dest_dir:
             os.makedirs(dest_dir, exist_ok=True)
 
         # Use httpapi download method (handles streaming, atomic write, MD5)
         result = connection.download(download_url, local_path)
-
-        return {
-            "remote_path": remote_path or url,
-            "local_path": local_path,
-            "file_size": result["file_size"],
-            "checksum": result["checksum"]
-        }
-
-    except Exception as e:
+    except (AnsibleConnectionError, OSError) as e:
         module.fail_json(
             msg=f"Download failed: {to_native(e)}",
             remote_path=remote_path or url,
             local_path=local_path
         )
+
+    return {
+        "remote_path": remote_path or url,
+        "local_path": local_path,
+        "file_size": result["file_size"],
+        "checksum": result["checksum"]
+    }
 
 
 def main():
@@ -227,10 +221,7 @@ def main():
     remote_path = module.params.get("remote_path")
     local_path = module.params["local_path"]
 
-    try:
-        connection = Connection(module._socket_path)
-    except Exception as e:
-        module.fail_json(msg=f"Failed to establish connection: {to_native(e)}")
+    connection = get_connection(module)
 
     # Handle batch downloads
     if isinstance(remote_path, list):
@@ -243,11 +234,9 @@ def main():
 
         results = [download_file(module, connection, item, local_path) for item in remote_path]
         module.exit_json(changed=False, results=results)
-        return
-
-    # Single download
-    result = download_file(module, connection, remote_path, local_path, url=url)
-    module.exit_json(**result)
+    else:
+        result = download_file(module, connection, remote_path, local_path, url=url)
+        module.exit_json(**result)
 
 
 if __name__ == "__main__":

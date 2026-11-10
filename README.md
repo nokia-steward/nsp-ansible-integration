@@ -78,4 +78,4 @@ BSD 3-Clause License (see [LICENSE](LICENSE))
 
 ---
 
-**Version**: 1.0.1 | **License**: BSD 3-Clause
+**Version**: 1.0.2 | **License**: BSD 3-Clause

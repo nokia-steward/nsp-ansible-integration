@@ -18,11 +18,11 @@ import tempfile
 import mimetypes
 import uuid
 
-# pylint: disable=redefined-builtin
 from urllib.parse import urlencode
 from urllib.error import HTTPError
 
-from ansible.module_utils.connection import ConnectionError
+from ansible.errors import AnsibleConnectionFailure
+from ansible.module_utils.connection import ConnectionError as AnsibleConnectionError
 from ansible.plugins.httpapi import HttpApiBase
 
 # Validate Python version and required packages (optional fallback)
@@ -94,11 +94,11 @@ class HttpApi(HttpApiBase):
     def _debug_log(self, message):
         """Write debug message to file and stdout."""
         try:
-            with open(self.debug_log_file, "a") as f:
+            with open(self.debug_log_file, "a", encoding="utf-8") as f:
                 f.write(message + "\n")
             print(f"[NSP API DEBUG] {message}", flush=True)
-        except Exception:  # nosec B110
-            # Silently fail if logging fails
+        except OSError:  # nosec B110
+            # Logging is best effort and must not break requests
             pass
 
     def _format_http_error(self, body, code, method, path):
@@ -153,7 +153,7 @@ class HttpApi(HttpApiBase):
             return f"{msg}: {text}"
         return msg
 
-    def login(self, username, password, auth_type=None, **kwargs):
+    def login(self, username, password):
         payload = json.dumps({"grant_type": "client_credentials"})
 
         headers = {
@@ -162,9 +162,9 @@ class HttpApi(HttpApiBase):
         }
 
         # Encode Basic authentication credentials
-        credentials = "{0}:{1}".format(username, password)
+        credentials = f"{username}:{password}"
         encoded = base64.b64encode(credentials.encode()).decode()
-        headers["Authorization"] = "Basic {0}".format(encoded)
+        headers["Authorization"] = f"Basic {encoded}"
 
         response = self.send_request(
             payload,
@@ -178,18 +178,16 @@ class HttpApi(HttpApiBase):
         if isinstance(body, dict):
             self.token = body.get("access_token")
             if not self.token:
-                raise ConnectionError(
-                    "No access_token in response: {0}".format(body)
+                raise AnsibleConnectionError(
+                    f"No access_token in response: {body}"
                 )
             # Set connection._auth for automatic Bearer token injection
-            self.connection._auth = {
-                "Authorization": "{0} {1}".format(
-                    self.AUTH_HEADER_PREFIX, self.token
-                )
+            self.connection._auth = {  # pylint: disable=protected-access
+                "Authorization": f"{self.AUTH_HEADER_PREFIX} {self.token}"
             }
         else:
-            raise ConnectionError(
-                "Unexpected response type: {0}".format(type(body))
+            raise AnsibleConnectionError(
+                f"Unexpected response type: {type(body)}"
             )
 
     def logout(self):
@@ -205,12 +203,12 @@ class HttpApi(HttpApiBase):
         username = self.connection.get_option("remote_user")
         password = self.connection.get_option("password")
 
-        credentials = "{0}:{1}".format(username, password)
+        credentials = f"{username}:{password}"
         encoded = base64.b64encode(credentials.encode()).decode()
 
         headers = {
             "Content-Type": "application/x-www-form-urlencoded",
-            "Authorization": "Basic {0}".format(encoded)
+            "Authorization": f"Basic {encoded}"
         }
 
         try:
@@ -221,12 +219,12 @@ class HttpApi(HttpApiBase):
                 headers=headers
             )
             self.token = None
-            self.connection._auth = None
-        except Exception as exc:
+            self.connection._auth = None  # pylint: disable=protected-access
+        except (AnsibleConnectionError, AnsibleConnectionFailure) as exc:
             # Best effort - do not fail if revocation fails
             self.connection.queue_message(
                 "warning",
-                "Token revocation failed: {0}".format(exc)
+                f"Token revocation failed: {exc}"
             )
 
     def update_auth(self, response, response_text):  # pylint: disable=unused-argument,arguments-renamed
@@ -251,7 +249,7 @@ class HttpApi(HttpApiBase):
             Parsed JSON dict, text, or bytes.
 
         Raises:
-            ConnectionError: On HTTP errors with status code and message.
+            AnsibleConnectionError: On HTTP errors with status code and message.
 
         Common content-types used by NSP:
             "application/json" (default)
@@ -264,46 +262,15 @@ class HttpApi(HttpApiBase):
         accept = message_kwargs.pop("accept", None)
         content_type = message_kwargs.pop("content_type", None)
 
-        # Log request details for debugging
-        self._debug_log("=== NSP API REQUEST ===")
-        self._debug_log(f"METHOD: {method}")
-        self._debug_log(f"PATH: {path}")
-
-        if data:
-            if isinstance(data, bytes):
-                data_preview = data[:500].decode('utf-8', errors='replace')
-            else:
-                data_preview = str(data)[:500]
-            self._debug_log(f"BODY (preview): {data_preview}")
-
+        headers.setdefault("Accept", "application/json")
+        headers.setdefault("Content-Type", "application/json")
         if accept:
             headers["Accept"] = accept
-        elif "Accept" not in headers:
-            headers["Accept"] = "application/json"
-
         if content_type:
             headers["Content-Type"] = content_type
-        elif "Content-Type" not in headers:
-            headers["Content-Type"] = "application/json"
 
-        # Ensure data is bytes for connection.send()
-        if data is not None and not isinstance(data, bytes):
-            # If data is a dict, serialize to JSON
-            if isinstance(data, dict):
-                data = json.dumps(data)
-            if isinstance(data, str):
-                data = data.encode("utf-8")
-            else:
-                data = str(data).encode("utf-8")
-
-        # Log actual body being sent
-        if data:
-            body_preview = data[:500].decode('utf-8', errors='replace') if isinstance(data, bytes) else str(data)[:500]
-            self._debug_log(f"BODY (actual): {body_preview}")
-
-        # Log final headers (mask token)
-        headers_debug = {k: (v if k != "Authorization" else "Bearer <redacted>") for k, v in headers.items()}
-        self._debug_log(f"HEADERS: {headers_debug}")
+        data = self._encode_body(data)
+        self._log_request(method, path, data, headers)
 
         response, response_data = self.connection.send(
             path, data, method=method, headers=headers
@@ -316,30 +283,70 @@ class HttpApi(HttpApiBase):
             raw_body = response_data.read()
             error_msg = self._format_http_error(raw_body, response.code, method, path)
             self._debug_log(f"HTTP ERROR: {error_msg}")
-            raise ConnectionError(error_msg, code=response.code)
+            raise AnsibleConnectionError(error_msg, code=response.code)
 
         # Store status so callers can retrieve it via get_response_status()
         self._response_status = status
 
-        data = response_data.read()
-
-        try:
-            body = json.loads(data)
-        except (ValueError, AttributeError):
-            body = None
-
-        if body is None:
-            if isinstance(data, bytes):
-                try:
-                    body = data.decode("utf-8")
-                except UnicodeDecodeError:
-                    pass
-            if body is None:
-                body = data
+        body = self._decode_body(response_data.read())
 
         # Return only the body to conform to the standard Ansible httpapi interface.
         # Callers that need the HTTP status code must call get_response_status().
         return body
+
+    def _log_request(self, method, path, data, headers):
+        """Write the request to the debug log, with the Authorization header masked."""
+        self._debug_log("=== NSP API REQUEST ===")
+        self._debug_log(f"METHOD: {method}")
+        self._debug_log(f"PATH: {path}")
+        if data:
+            self._debug_log(f"BODY (preview): {data[:500].decode('utf-8', errors='replace')}")
+        headers_debug = {k: (v if k != "Authorization" else "<redacted>") for k, v in headers.items()}
+        self._debug_log(f"HEADERS: {headers_debug}")
+
+    @staticmethod
+    def _encode_body(data):
+        """Return the request body as bytes for connection.send(); dicts are sent as JSON."""
+        if data is None or isinstance(data, bytes):
+            return data
+        if isinstance(data, dict):
+            data = json.dumps(data)
+        return str(data).encode("utf-8")
+
+    @staticmethod
+    def _decode_body(data):
+        """Return the response body as parsed JSON, else as text, else as raw bytes."""
+        try:
+            return json.loads(data)
+        except (ValueError, TypeError):
+            pass
+        if isinstance(data, bytes):
+            try:
+                return data.decode("utf-8")
+            except UnicodeDecodeError:
+                pass
+        return data
+
+    @staticmethod
+    def _read_file(filename):
+        """Return the content of a local file; raise AnsibleConnectionError if it cannot be read."""
+        try:
+            with open(filename, "rb") as f:
+                return f.read()
+        except OSError as e:
+            raise AnsibleConnectionError(f"Failed to read file: {e}") from e
+
+    @staticmethod
+    def _multipart_body(boundary, field, filename, mime_type, file_data):
+        """Return a multipart/form-data body with a single file part."""
+        head = "\r\n".join([
+            f"--{boundary}",
+            f"Content-Disposition: form-data; name=\"{field}\"; filename=\"{filename}\"",
+            f"Content-Type: {mime_type}",
+            "",
+            "",
+        ])
+        return head.encode("utf-8") + file_data + f"\r\n--{boundary}--\r\n".encode("utf-8")
 
     def get_response_status(self):
         """Return the HTTP status code of the most recent send_request call."""
@@ -364,7 +371,7 @@ class HttpApi(HttpApiBase):
             dict: {'file_size': bytes, 'checksum': md5_hex}
 
         Raises:
-            ConnectionError: On HTTP errors or file size exceeds 1GB
+            AnsibleConnectionError: On HTTP errors or file size exceeds 1GB
         """
         headers = kwargs.pop("headers", {})
         method = kwargs.pop("method", "GET")
@@ -375,40 +382,32 @@ class HttpApi(HttpApiBase):
 
         if isinstance(response, HTTPError):
             body = response_data.read()
-            raise ConnectionError(body, code=response.code)
+            raise AnsibleConnectionError(body, code=response.code)
 
-        tmpdir = os.path.dirname(filename) or '.'
-        fd, tmpfile = tempfile.mkstemp(dir=tmpdir)
+        if hasattr(response_data, 'read'):
+            chunks = iter(lambda: response_data.read(self._DOWNLOAD_CHUNK_SIZE), b"")
+        else:
+            chunks = [response_data]
+        return self._write_atomic(chunks, filename)
+
+    def _write_atomic(self, chunks, filename):
+        """Write chunks to filename through a temporary file; return file size and MD5 checksum."""
+        fd, tmpfile = tempfile.mkstemp(dir=os.path.dirname(filename) or '.')
         total = 0
         md5 = hashlib.md5(usedforsecurity=False)  # nosec B324
-
         try:
-            if hasattr(response_data, 'read'):
-                while True:
-                    chunk = response_data.read(self._DOWNLOAD_CHUNK_SIZE)
-                    if not chunk:
-                        break
-                    if total + len(chunk) > self._DOWNLOAD_MAX_SIZE:
-                        raise ConnectionError(
+            with os.fdopen(fd, "wb") as f:
+                for chunk in chunks:
+                    total += len(chunk)
+                    if total > self._DOWNLOAD_MAX_SIZE:
+                        raise AnsibleConnectionError(
                             f"File size exceeds maximum of {self._DOWNLOAD_MAX_SIZE >> 20}MB"
                         )
-                    os.write(fd, chunk)
+                    f.write(chunk)
                     md5.update(chunk)
-                    total += len(chunk)
-            else:
-                if len(response_data) > self._DOWNLOAD_MAX_SIZE:
-                    raise ConnectionError(
-                        f"File size exceeds maximum of {self._DOWNLOAD_MAX_SIZE >> 20}MB"
-                    )
-                os.write(fd, response_data)
-                md5.update(response_data)
-                total = len(response_data)
         except Exception:
-            os.close(fd)
             os.unlink(tmpfile)
             raise
-        else:
-            os.close(fd)
 
         os.replace(tmpfile, filename)
         return {'file_size': total, 'checksum': md5.hexdigest()}
@@ -425,7 +424,7 @@ class HttpApi(HttpApiBase):
             dict: HTTP response data
 
         Raises:
-            ConnectionError: On HTTP errors or file not found
+            AnsibleConnectionError: On HTTP errors or file not found
         """
         headers = kwargs.pop("headers", {})
         method = kwargs.pop("method", "POST")
@@ -433,28 +432,17 @@ class HttpApi(HttpApiBase):
         content_type = kwargs.pop("content_type", None)
         remote_filename = kwargs.pop("remote_filename", None)
 
-        try:
-            with open(filename, "rb") as f:
-                file_data = f.read()
-        except OSError as e:
-            raise ConnectionError("Failed to read file: {0}".format(e))
+        file_data = self._read_file(filename)
+        boundary = f"----NSPFormBoundary{uuid.uuid4().hex}"
+        body = self._multipart_body(
+            boundary,
+            file_field,
+            remote_filename or os.path.basename(filename),
+            content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream",
+            file_data,
+        )
 
-        filename_only = remote_filename or os.path.basename(filename)
-        file_mime = content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
-        boundary = "----NSPFormBoundary{0}".format(uuid.uuid4().hex)
-
-        body_lines = [
-            "--{0}".format(boundary),
-            "Content-Disposition: form-data; name=\"{0}\"; filename=\"{1}\"".format(file_field, filename_only),
-            "Content-Type: {0}".format(file_mime),
-            "",
-            "",
-        ]
-        body = "\r\n".join(body_lines).encode("utf-8")
-        body += file_data
-        body += "\r\n--{0}--\r\n".format(boundary).encode("utf-8")
-
-        headers.setdefault("Content-Type", "multipart/form-data; boundary={0}".format(boundary))
+        headers.setdefault("Content-Type", f"multipart/form-data; boundary={boundary}")
         headers.setdefault("Content-Length", str(len(body)))
 
         response, response_data = self.connection.send(
@@ -463,6 +451,6 @@ class HttpApi(HttpApiBase):
 
         if isinstance(response, HTTPError):
             body = response_data.read()
-            raise ConnectionError(body, code=response.code)
+            raise AnsibleConnectionError(body, code=response.code)
 
         return self._parse_response_data(response_data)
