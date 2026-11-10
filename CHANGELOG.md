@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-11-10
+
+### Added
+
+- Release workflow runs `galaxy-importer` on the collection artifact before publish (`make import-galaxy`)
+- README Ansible Galaxy badge with live version from Galaxy, linking to the [published collection](https://galaxy.ansible.com/ui/repo/published/nokia/nsp)
+
 ## [1.0.2] - 2026-11-10
 
 ### Changed
@@ -75,9 +82,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## Release Information
 
-**Current Version:** 1.0.2  
+**Current Version:** 1.0.3  
 **Repository:** [github.com/nokia-steward/nsp-ansible-integration](https://github.com/nokia-steward/nsp-ansible-integration)
 
+[1.0.3]: https://github.com/nokia-steward/nsp-ansible-integration/releases/tag/1.0.3
 [1.0.2]: https://github.com/nokia-steward/nsp-ansible-integration/releases/tag/1.0.2
 [1.0.1]: https://github.com/nokia-steward/nsp-ansible-integration/releases/tag/1.0.1
 [1.0.0]: https://github.com/nokia-steward/nsp-ansible-integration/releases/tag/1.0.0

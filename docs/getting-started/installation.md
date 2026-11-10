@@ -79,7 +79,7 @@ Confirm the collection is installed and accessible:
 ansible-galaxy collection list | grep nokia.nsp
 
 # Expected output:
-# nokia.nsp  1.0.2
+# nokia.nsp  1.0.3
 
 # Verify module documentation is available
 ansible-doc -t module nokia.nsp.rpc

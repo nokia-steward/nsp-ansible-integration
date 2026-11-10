@@ -9,6 +9,7 @@ tests/inventory.yml
 tests/reports/
 .DS_Store
 site/
+importer_result.json
 
 # Local editor metadata (not part of the collection)
 .cursor/

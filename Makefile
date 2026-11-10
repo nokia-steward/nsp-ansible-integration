@@ -1,4 +1,4 @@
-.PHONY: help setup install-dev check-venv lint flake8 pylint format yamllint security bandit audit validate validate-syntax validate-ansible test docs docs-serve build publish clean clean-all ci test-all
+.PHONY: help setup install-dev check-venv lint flake8 pylint format yamllint security bandit audit validate validate-syntax validate-ansible test docs docs-serve build import-galaxy publish clean clean-all ci test-all
 
 # Virtual environment variables
 # Requires Python 3.12+ (ansible-core 2.20+)
@@ -49,6 +49,7 @@ help:
 	@echo ""
 	@echo "BUILD, INSTALL, PUBLISH:"
 	@echo "  make build              Build collection artifact"
+	@echo "  make import-galaxy      Validate built tarball with galaxy-importer"
 	@echo "  make install            Install collection artifact"
 	@echo "  make dev-install        Fast symlink install (changes take effect immediately)"
 	@echo "  make publish            Publish to Ansible Galaxy"
@@ -240,6 +241,13 @@ build: validate lint
 	@echo "Building collection artifact..."
 	ansible-galaxy collection build --force
 	@echo "✓ Collection successfully built"
+
+import-galaxy:
+	@echo "Validating collection artifact with galaxy-importer (same checks as Ansible Galaxy)..."
+	@ARTIFACT="$(COLLECTION_NAMESPACE)-$(COLLECTION_NAME)-$$(grep '^version:' galaxy.yml | awk '{print $$2}').tar.gz"; \
+	test -f "$$ARTIFACT" || (echo "Artifact $$ARTIFACT not found; run make build first" >&2; exit 1); \
+	$(PYTHON) -m galaxy_importer.main "$$ARTIFACT"
+	@echo "✓ galaxy-importer validation passed"
 
 install:
 	@echo "Installing collection artifact..."

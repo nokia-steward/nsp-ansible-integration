@@ -47,6 +47,9 @@ jobs:
 
           echo "FILENAME=$FILENAME" >> "$GITHUB_ENV"
 
+      - name: Validate collection for Ansible Galaxy (galaxy-importer)
+        run: make import-galaxy
+
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
