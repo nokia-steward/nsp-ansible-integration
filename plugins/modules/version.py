@@ -16,7 +16,11 @@ import json
 import re
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.connection import Connection
+from ansible.module_utils.connection import ConnectionError as AnsibleConnectionError
+from ansible_collections.nokia.nsp.plugins.module_utils.nsp import (  # pylint: disable=import-error
+    get_connection,
+    response_body,
+)
 
 # Validate Python version and required packages (optional fallback)
 try:
@@ -120,89 +124,76 @@ def validate_minimum_version(major, minor, check_version):
     """
     min_major, min_minor = parse_version(check_version)
 
-    if major > min_major:
+    if (major, minor) >= (min_major, min_minor):
         return True, f"Version {major}.{minor} >= {min_major}.{min_minor} ✓"
-    elif major == min_major and minor >= min_minor:
-        return True, f"Version {major}.{minor} >= {min_major}.{min_minor} ✓"
-    else:
-        return False, f"Version {major}.{minor} < {min_major}.{min_minor} (incompatible)"
+    return False, f"Version {major}.{minor} < {min_major}.{min_minor} (incompatible)"
 
 
 def main():
     """Main module execution."""
     module = AnsibleModule(
-        argument_spec=dict(
-            check=dict(type="str", required=False, default=None),
-        ),
+        argument_spec={
+            "check": {"type": "str", "required": False, "default": None},
+        },
         supports_check_mode=False,
     )
 
-    connection = Connection(module._socket_path)
+    connection = get_connection(module)
 
     # Internal API endpoint for version information
     endpoint = "/internal/shared-app-banner-utils/rest/api/v1/appBannerUtils/release-version"
 
     try:
-        # Call the httpapi plugin to make the request
-        response = connection.send_request(
+        response = response_body(connection.send_request(
             method="GET",
             path=endpoint,
             data=None,
-        )
-        response = response[1] if isinstance(response, tuple) and len(response) > 1 else response
-
-        # Parse response
-        if isinstance(response, str):
-            response_data = json.loads(response)
-        else:
-            response_data = response
-
-        # Extract version from nested response structure
-        try:
-            nsp_version = response_data["response"]["data"]["nspOSVersion"]
-        except (KeyError, TypeError) as e:
-            module.fail_json(
-                msg=f"Could not extract version from response: {str(e)}",
-                response=response_data
-            )
-
-        # Parse major.minor from version string
-        try:
-            major, minor = parse_version(nsp_version)
-        except ValueError as e:
-            module.fail_json(
-                msg=str(e),
-                version_string=nsp_version
-            )
-
-        # Build response
-        result = {
-            "release": nsp_version,
-            "major": major,
-            "minor": minor,
-        }
-
-        # Validate minimum version if specified
-        if module.params.get("check"):
-            is_valid, message = validate_minimum_version(
-                major,
-                minor,
-                module.params["check"]
-            )
-
-            if not is_valid:
-                module.fail_json(
-                    msg=f"NSP version validation failed: {message}",
-                    **result
-                )
-
-        module.exit_json(changed=False, **result)
-
-    except Exception as e:
+        ))
+        response_data = json.loads(response) if isinstance(response, str) else response
+    except (AnsibleConnectionError, ValueError) as e:
         module.fail_json(
-            msg=f"Failed to retrieve NSP version: {str(e)}",
+            msg=f"Failed to retrieve NSP version: {e}",
             exception=str(e)
         )
+
+    # Extract version from nested response structure
+    try:
+        nsp_version = response_data["response"]["data"]["nspOSVersion"]
+    except (KeyError, TypeError) as e:
+        module.fail_json(
+            msg=f"Could not extract version from response: {e}",
+            response=response_data
+        )
+
+    # Parse major.minor from version string
+    try:
+        major, minor = parse_version(nsp_version)
+    except ValueError as e:
+        module.fail_json(
+            msg=str(e),
+            version_string=nsp_version
+        )
+
+    result = {
+        "release": nsp_version,
+        "major": major,
+        "minor": minor,
+    }
+
+    # Validate minimum version if specified
+    if module.params.get("check"):
+        try:
+            is_valid, message = validate_minimum_version(major, minor, module.params["check"])
+        except ValueError as e:
+            module.fail_json(msg=f"Invalid value for check: {e}", **result)
+
+        if not is_valid:
+            module.fail_json(
+                msg=f"NSP version validation failed: {message}",
+                **result
+            )
+
+    module.exit_json(changed=False, **result)
 
 
 if __name__ == "__main__":

@@ -1,61 +1,11 @@
 # Pylint configuration for Nokia NSP Ansible Collection
-# Generated: 2026-02-08
-
-[MASTER]
-# Specify a configuration file
-# Load dynamic modules
-
-[MESSAGES CONTROL]
-# Disable specific warnings that are intentional or overly strict
-disable=
-    # F-string suggestion - we support Python 3.8+
-    consider-using-f-string,
-    # Protected member access - intentional in Ansible modules
-    protected-access,
-    # Duplicate code in module definitions - acceptable
-    duplicate-code,
-    # Unused arguments - common in interface implementations
-    unused-argument,
-    # Too broad exception catching - needed for Ansible modules
-    broad-exception-caught,
-    # Missing docstring in modules/classes - documented via DOCUMENTATION var
-    missing-class-docstring,
-    # Too many arguments/lines - Ansible modules are often verbose
-    too-many-arguments,
-    too-many-locals,
-    too-many-branches,
-    too-many-statements,
-    # Line too long - handled by flake8
-    line-too-long,
-    # Dict literal - dict() is acceptable
-    use-dict-literal,
-    # Import outside toplevel - intentional for performance in Ansible modules
-    import-outside-toplevel,
-    # Style preferences that don't affect functionality
-    no-else-return,
-    no-else-raise,
-    inconsistent-return-statements,
-    too-many-return-statements,
-    # Raise missing from - acceptable pattern
-    raise-missing-from,
-    # Encoding specification - Python 3 defaults to UTF-8
-    unspecified-encoding,
-    # Variable possibly used before assignment - false positives
-    possibly-used-before-assignment,
-    # Import order - handled by isort
-    wrong-import-order,
-    # isinstance merging - readability preference
-    consider-merging-isinstance,
+#
+# All checks are enabled with pylint's default limits. Silence a finding only
+# inline, on the affected line, where the code cannot follow the check.
 
 [FORMAT]
+# Same limit as flake8
 max-line-length=120
-
-[DESIGN]
-# Ansible modules often have complex argument specifications
-max-attributes=15
-max-locals=20
-max-branches=15
-max-statements=60
 
 [BASIC]
 # Good variable names which should always be accepted
@@ -65,22 +15,8 @@ good-names=
     x,y,z,
     id,uuid,
 
-[IMPORTS]
-# Analyse import fallback blocks. This can be used to support both Python 2 and
-# Python 3 compatible code, which means that the imported module may exist only
-# in one or the other
-analyse-fallback-blocks=yes
-
-[VARIABLES]
-# Tells whether we should check for unused import in __init__ files.
-init-import=no
-
 [SIMILARITIES]
 min-similarity-lines=10
 ignore-comments=yes
 ignore-docstrings=yes
 ignore-imports=yes
-
-[MISCELLANEOUS]
-# List of note tags to take in consideration
-notes=FIXME,XXX,TODO

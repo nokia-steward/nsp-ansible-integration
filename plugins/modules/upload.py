@@ -13,10 +13,12 @@ Uses NSP file-service upload endpoint with optional overwrite control.
 """
 
 import os
+from urllib.parse import quote
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible.module_utils.connection import Connection
+from ansible.module_utils.connection import ConnectionError as AnsibleConnectionError
 from ansible.module_utils.common.text.converters import to_native
+from ansible_collections.nokia.nsp.plugins.module_utils.nsp import get_connection  # pylint: disable=import-error
 
 # Validate Python version and required packages (optional fallback)
 try:
@@ -204,8 +206,6 @@ def build_upload_url(remote_path, overwrite=True, local_path=None, is_batch=Fals
     Returns:
         Upload endpoint URL with parameters.
     """
-    from urllib.parse import quote
-
     remote_dir = _resolve_remote_dir(remote_path, local_path, is_batch)
     encoded_dir = quote(remote_dir, safe="")
     overwrite_value = "true" if overwrite else "false"
@@ -213,6 +213,19 @@ def build_upload_url(remote_path, overwrite=True, local_path=None, is_batch=Fals
         "/nsp-file-service-app/rest/api/v1/file/uploadFile"
         f"?dirName={encoded_dir}&overwrite={overwrite_value}"
     )
+
+
+def _upload_file(module, connection, upload_url, local_file, remote_filename):
+    """Upload one file and return the server response; fail the module on error."""
+    try:
+        return connection.upload(upload_url, local_file, remote_filename=remote_filename)
+    except AnsibleConnectionError as e:
+        module.fail_json(
+            msg=f"Upload failed: {to_native(e)}",
+            local_path=local_file,
+            remote_path=module.params["remote_path"]
+        )
+    return None
 
 
 def main():
@@ -234,56 +247,35 @@ def main():
     is_batch = isinstance(local_path, list)
     _validate_files(module, local_list)
 
-    try:
-        connection = Connection(module._socket_path)
-    except Exception as e:
-        module.fail_json(msg=f"Failed to establish connection: {to_native(e)}")
+    connection = get_connection(module)
 
-    try:
-        upload_url = build_upload_url(
-            remote_path=remote_path,
-            overwrite=overwrite,
-            local_path=local_list[0],
-            is_batch=is_batch
-        )
+    upload_url = build_upload_url(
+        remote_path=remote_path,
+        overwrite=overwrite,
+        local_path=local_list[0],
+        is_batch=is_batch
+    )
 
-        if is_batch:
-            results = []
-            for item in local_list:
-                remote_filename = _resolve_remote_filename(remote_path, item, is_batch)
-                response = connection.upload(
-                    upload_url,
-                    item,
-                    remote_filename=remote_filename
-                )
-                results.append({
-                    "local_path": item,
-                    "remote_path": remote_path,
-                    "url": upload_url,
-                    "response": response
-                })
-            module.exit_json(changed=True, results=results)
-        else:
-            remote_filename = _resolve_remote_filename(remote_path, local_path, is_batch)
-            response = connection.upload(
-                upload_url,
-                local_path,
-                remote_filename=remote_filename
-            )
-            module.exit_json(
-                local_path=local_path,
-                remote_path=remote_path,
-                remote_filename=remote_filename,
-                url=upload_url,
-                response=response
-            )
+    if is_batch:
+        results = []
+        for item in local_list:
+            remote_filename = _resolve_remote_filename(remote_path, item, is_batch)
+            results.append({
+                "local_path": item,
+                "remote_path": remote_path,
+                "url": upload_url,
+                "response": _upload_file(module, connection, upload_url, item, remote_filename),
+            })
+        module.exit_json(changed=True, results=results)
 
-    except Exception as e:
-        module.fail_json(
-            msg=f"Upload failed: {to_native(e)}",
-            local_path=local_path,
-            remote_path=remote_path
-        )
+    remote_filename = _resolve_remote_filename(remote_path, local_path, is_batch)
+    module.exit_json(
+        local_path=local_path,
+        remote_path=remote_path,
+        remote_filename=remote_filename,
+        url=upload_url,
+        response=_upload_file(module, connection, upload_url, local_path, remote_filename),
+    )
 
 
 if __name__ == "__main__":

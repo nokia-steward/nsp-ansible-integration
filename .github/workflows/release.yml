@@ -17,6 +17,8 @@ jobs:
   build-and-publish:
     runs-on: ubuntu-latest
     environment: release
+    env:
+      ANSIBLE_GALAXY_API_KEY: ${{ secrets.ANSIBLE_GALAXY_API_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -64,8 +66,6 @@ jobs:
 
       - name: Publish to Ansible Galaxy
         if: env.ANSIBLE_GALAXY_API_KEY != ''
-        env:
-          ANSIBLE_GALAXY_API_KEY: ${{ secrets.ANSIBLE_GALAXY_API_KEY }}
         run: |
           echo "Publishing collection to Ansible Galaxy..."
           ansible-galaxy collection publish ${{ env.FILENAME }} --api-key "$ANSIBLE_GALAXY_API_KEY"
